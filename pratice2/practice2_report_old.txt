@@ -1,0 +1,64 @@
+Noms des membres de l'équipe :
+- TACHER Adrien
+- LECOMTE Solène
+- GOUJON William
+
+Nom de l'équipe : AdrienSoleneWilliam
+
+----------------------------------------------------
+## Exercise 1: Increasing the size of the collection (practice2_ex1.py)
+
+Cet exercice consistait à indexer plusieurs collections de tailles croissantes afin de mesurer le temps d’indexation et d’extraire quelques statistiques descriptives.
+
+Le programme **practice2_ex1.py** réalise les étapes suivantes :
+1. **read_documents()** : Extraction des blocs `<doc>` et `<docno>` à partir des fichiers .gz.
+2. **tokeniser()** : Conversion en minuscules, suppression des ponctuations et chiffres (`[a-z]+`).
+3. **build_index_and_stats()** : Construction de l’index inversé et calcul des statistiques :
+   - Longueur moyenne des documents (avg_doc_length)
+   - Longueur moyenne des termes (avg_term_length)
+   - Taille du vocabulaire (vocab_size)
+4. **Affichage** : Pour chaque fichier de collection, le programme affiche le temps d’indexation et les statistiques correspondantes.
+5. **Graphique** : Génération du graphique “Indexing time vs collection size” (taille en Ko sur l’axe X, temps en secondes sur l’axe Y).
+
+**Résultats observés :**
+- Le temps d’indexation augmente avec la taille de la collection.
+- Les statistiques restent stables sur les petits fichiers mais évoluent légèrement pour les grandes tailles.
+
+----------------------------------------------------
+## Exercise 2: Collection Statistics (practice2_ex2.py)
+
+Le programme **practice2_ex2.py** reprend les étapes de lecture et de tokenisation de l’exercice 1, mais ne construit pas d’index complet. Il calcule uniquement des statistiques globales sur chaque fichier.
+
+Étapes principales :
+1. **read_documents()** : Extraction des documents.
+2. **tokeniser()** : Nettoyage et normalisation des termes.
+3. **build_stats()** : Calcul de trois indicateurs :
+   - Longueur moyenne des documents (#terms)
+   - Longueur moyenne des termes (#chars)
+   - Taille du vocabulaire (#termes distincts)
+4. **Graphiques générés :**
+   - “Average document length vs size of collection”
+   - “Average term length vs size of collection”
+   - “Vocabulary size vs size of collection”
+
+**Résultats observés :**
+- La longueur moyenne des documents augmente légèrement avec la taille de la collection.
+- La longueur moyenne des termes reste stable (autour de 5-6 caractères).
+- La taille du vocabulaire croît presque linéairement.
+
+----------------------------------------------------
+## Exercise 3: Stop-words (practice2_ex3.py)
+
+Cet exercice visait à améliorer le prétraitement en retirant les **stop-words** (mots très fréquents) afin d’obtenir un index plus représentatif du contenu.
+
+Le programme **practice2_ex3.py** réalise les étapes suivantes :
+1. **Chargement des stop-words** à partir du fichier `stop-words-english4.txt`.
+2. **Tokenisation** : minuscules, suppression des caractères spéciaux et chiffres (`[a-z]+`).
+3. **Filtrage** : exclusion des termes présents dans la liste des stop-words.
+4. **Calcul des statistiques** identiques à celles de l’exercice 2.
+5. **Affichage et graphiques** : comparaison de l’évolution des mesures après suppression des stop-words.
+
+**Résultats observés :**
+- Longueur moyenne des documents **diminue** (moins de mots non pertinents).
+- Longueur moyenne des termes **augmente légèrement** (les mots restants sont plus “informatifs”).
+- Taille du vocabulaire **diminue fortement** (suppression des mots fréquents comme “the”, “and”, “of”...).

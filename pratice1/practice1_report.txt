@@ -1,0 +1,127 @@
+Noms des membres de l'équipe :
+- TACHER Adrien
+- LECOMTE Solène
+- GOUJON William
+
+Nom de l'équipe : AdrienSoleneWilliam
+
+---
+## Exercice 1 : (Inverted Index)
+
+Cet exercice consistait à construire manuellement un index inversé à partir d'une collection de documents. L'index inversé stocke pour chaque terme la liste des documents qui le contiennent (la liste d'affichage, ou 'posting list').
+
+Exemple de la structure de l'index :
+- 'term' -> {Document_ID1, Document_ID2, ...}
+
+L'index complet construit est le suivant (uniquement la liste d'affichage sans les fréquences):
+
+Arabia → D4
+Casablanca → D1
+Citizen → D0
+Godfather → D2
+Gone → D3
+Graduate → D6
+In →D9
+Kane → D0
+Lawrence → D4
+List → D8
+Of → D4, D5
+On → D7
+Oz → D5
+Rain → D9
+Schindler → D8
+Singin → D9
+The → D2, D3, D5, D6, D7, D9
+Waterfront → D7
+Wind → D3
+With →D3
+Wizard → D5
+
+---
+## Exercice 2 : Toy indexer (practice1_ex2.py)
+
+Le programme practice1_ex2.py construit un index inversé en lisant les documents à partir d'un fichier (collection.txt).
+
+Il effectue les étapes suivantes :
+1.  **read_documents()** : Extraction des blocs <doc> et des <docno>.
+2.  **tokeniser()** : Normalisation des termes (mise en minuscules, suppression des apostrophes, extraction des chaînes alphanumériques).
+3.  **build_index()** : Construction de l'index. Pour chaque terme, il stocke la liste des documents et la fréquence du terme dans ce document (term frequency, TF).
+4.  **print_index()** : Affichage de l'index trié.
+
+**Commande exécutée :**
+python practice1_ex2.py collection.txt
+
+**Sortie du programme :**
+
+1=df(arabia)
+1 D4
+1=df(casablanca)
+1 D1
+1=df(citizen)
+1 D0
+1=df(godfather)
+2 D2
+1=df(gone)
+1 D3
+1=df(graduate)
+1 D6
+1=df(in)
+1 D9
+1=df(kane)
+1 D0
+1=df(lawrence)
+1 D4
+1=df(list)
+1 D8
+2=df(of)
+1 D4
+2 D5
+1=df(on)
+1 D7
+1=df(oz)
+2 D5
+1=df(rain)
+1 D9
+1=df(s)
+1 D8
+1=df(schindler)
+1 D8
+1=df(singin)
+1 D9
+6=df(the)
+2 D2
+1 D3
+2 D5
+1 D6
+1 D7
+1 D9
+1=df(waterfront)
+1 D7
+1=df(wind)
+1 D3
+1=df(with)
+1 D3
+1=df(wizard)
+2 D5
+
+
+---
+## Exercice 3 : Boolean Queries (pratice1_ex3.py)
+
+Le programme pratice1_ex3.py utilise l'index inversé de l'Exercice 1, représenté sous forme de dictionnaires de sets Python, pour exécuter des requêtes booléennes simples.
+
+Implémentation des opérateurs :
+- **AND** (Intersection) : Réalisé avec l'opérateur '&'. Retourne les documents présents dans les deux listes.
+- **OR** (Union) : Réalisé avec l'opérateur '|'. Retourne tous les documents présents dans au moins une des listes.
+- **AND NOT** (Différence) : Réalisé avec l'opérateur '-'. Retourne les documents présents dans la première liste mais pas dans la seconde.
+
+**Sortie du programme :**
+
+Requête : 'the AND wizard'
+{'D5'}
+
+Requête : 'the OR godfather'
+{'D3', 'D7', 'D9', 'D5', 'D6', 'D2'}
+
+Requête : 'the AND NOT wizard'
+{'D7', 'D9', 'D6', 'D2', 'D3'}

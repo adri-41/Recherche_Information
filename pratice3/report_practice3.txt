@@ -1,0 +1,136 @@
+Noms des membres de l'équipe :
+- TACHER Adrien
+- LECOMTE Solène
+- GOUJON William
+
+Nom de l'équipe : AdrienSoleneWilliam
+
+####################################################
+### RAPPORT TP n°3 : PONDÉRATION ET CLASSEMENT ###
+####################################################
+
+----------------------------------------------------
+## Exercice 1 : Statistiques de collection (Indexation de Base)
+
+Cet exercice consistait à indexer la collection avec une tokenisation simple (mots alphabétiques en minuscules), sans suppression des stop-words ni stemming.
+
+Processus : Tokenisation simple (ltn).
+
+Résultats observés (practice3_ex1.py) :
+- Temps total d'indexation : 2.87 secondes
+- Total #tokens : 10,913,214
+- Total #distinct tokens (Vocabulaire) : 206,913
+- Longueur moyenne des documents : 1113.14 termes
+
+Observation : 
+L'absence de traitement des termes résulte en un vocabulaire important et une longueur moyenne de document élevée, reflétant la taille brute des textes.
+
+----------------------------------------------------
+## Exercice 2 : Statistiques de collection (Stop-words + Stemmer)
+
+L'objectif était d'améliorer la qualité de l'index en appliquant le filtrage des stop-words et le stemming de Porter.
+
+Processus : Suppression des stop-words + Porter Stemmer.
+
+Résultats observés (practice3_ex2.py) :
+- Temps total d'indexation : 51.28 secondes
+- Total #terms (après filtrage) : 6,481,553
+- Total #distinct terms (Vocabulaire final) : 168,205
+- Longueur moyenne des documents : 661.11 termes
+
+Observation :
+Le temps d'exécution est significativement plus long (51.28s vs 2.87s) à cause du traitement additionnel par le Stemmer. Le nombre total de termes (-40%) et la taille du vocabulaire (-18%) ont fortement diminué, confirmant l'efficacité du prétraitement pour réduire la redondance et la taille de l'index.
+
+----------------------------------------------------
+## Exercice 3 : Classement par SMART ltn
+
+Modèle : ltn (Log-TF, IDF, Produit Scalaire).
+Le modèle ltn (sans normalisation par la longueur) est fortement biaisé en faveur des documents les plus longs.
+
+Résultats pour la requête « web ranking scoring algorithm » :
+- Collection size (N) : 9804
+- Total weighting time : 8.946 sec
+- Poids du terme 'ranking' dans doc #23724 : 2.367428
+- RSV du document #23724 : 7.369951
+
+Top-10 documents:
+ 1. doc=18336216 RSV=7.593819
+ 2. doc=23724 RSV=7.369951
+ 3. doc=448834 RSV=7.050838
+ 4. doc=207747 RSV=7.035908
+ 5. doc=8967626 RSV=6.926928
+ 6. doc=1803281 RSV=6.846160
+ 7. doc=17906559 RSV=6.703489
+ 8. doc=2086074 RSV=6.700673
+ 9. doc=9567871 RSV=6.689545
+10. doc=719095 RSV=6.668482
+
+----------------------------------------------------
+## Exercice 4 : Classement par SMART ltc (Similarité Cosinus)
+
+Modèle : ltc (Log-TF, IDF, Normalisation Cosinus).
+La normalisation par la longueur du vecteur permet de classer les documents en fonction de leur similarité (angle) avec le vecteur requête, corrigeant le biais du modèle ltn.
+
+Résultats pour la requête « web ranking scoring algorithm » :
+- Collection size (N) : 9804
+- Total weighting time : 5.626 sec
+- Poids du terme 'ranking' dans doc #23724 [ltc] : 0.035820
+- RSV du document #23724 [cosine] : 0.053593
+
+Top-10 documents:
+ 1. doc=2363262 RSV=0.172559
+ 2. doc=5883652 RSV=0.161617
+ 3. doc=9981737 RSV=0.125769
+ 4. doc=14199294 RSV=0.124225
+ 5. doc=10416781 RSV=0.115321
+ 6. doc=5822019 RSV=0.114378
+ 7. doc=18546432 RSV=0.111477
+ 8. doc=12985913 RSV=0.108919
+ 9. doc=8080270 RSV=0.104468
+10. doc=18808873 RSV=0.103102
+
+Observation :
+Les scores sont beaucoup plus petits (RSV < 1), ce qui est normal pour la Similarité Cosinus. Le Top-10 est complétement différent de ltn, car la normalisation a mis en évidence des documents potentiellement plus courts ou plus concentrés sur les termes de la requête.
+
+----------------------------------------------------
+## Exercice 5 : Classement par BM25
+
+Modèle : BM25 avec k1=1.2 et b=0.75.
+BM25 est un modèle probabiliste qui utilise une fonction de saturation du TF et une normalisation de longueur plus fine.
+
+Résultats pour la requête « web ranking scoring algorithm » :
+- Collection size (N) : 9804
+- Avg Document Length (avdl) : 661.11
+- Paramètres BM25 : k1=1.2, b=0.75
+- Total weighting time : 0.068 sec
+- Poids du terme "ranking" stemmé ("rank") dans doc=23724 [TF_adj] : 1.818117
+- RSV du document #23724 : 11.620971
+
+Top-10 documents:
+ 1. doc=3503154 RSV=12.007767
+ 2. doc=23724 RSV=11.620971
+ 3. doc=465576 RSV=11.590354
+ 4. doc=18096221 RSV=11.390926
+ 5. doc=18543218 RSV=11.334216
+ 6. doc=1009996 RSV=11.301593
+ 7. doc=6422823 RSV=11.182137
+ 8. doc=1793571 RSV=11.102288
+ 9. doc=1482394 RSV=10.957961
+10. doc=752465 RSV=10.323343
+
+Observation :
+BM25 est beaucoup plus rapide pour le scoring (0.068s) car il n'effectue pas de normalisation coûteuse sur la requête. Le Top-10 obtenu est différent de ltn et ltc, et le document #23724 est classé en 2e position, soulignant sa haute pertinence selon ce modèle.
+
+----------------------------------------------------
+## Synthèse des Résultats (Exemple Synthétique d1, d2)
+
+Le tableau suivant présente les résultats des trois modèles de pondération appliqués sur l'exemple synthétique du fichier Excel (d1, d2, q). (Utilisation de N=1000, avdl=20, k1=1, b=0.5).
+
+| Modèle | RSV(d1, q) | RSV(d2, q) | Document Gagnant |
+| :---: | :---: | :---: | :---: |
+| SMART ltn | 3.023 | 2.000 | d1 |
+| SMART ltc | 0.556 | 0.501 | d1 |
+| BM25 | 7.029 | 5.515 | d1 |
+
+Conclusion générale :
+Les trois modèles de pondération classent d1 devant d2, ce qui indique que d1 est le document le plus pertinent pour la requête dans ce scénario synthétique. Ltn donne les scores les plus élevés en raison de l'absence de normalisation. Ltc et BM25, en appliquant une normalisation de longueur, montrent des scores plus faibles et plus représentatifs d'une similarité ou pertinence ajustée. Le modèle BM25, bien que très différent dans sa formulation, conserve la même préférence de classement que ltc, démontrant sa robustesse.
