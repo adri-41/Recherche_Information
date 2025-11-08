@@ -50,8 +50,8 @@ def compute_stats(docs, stopwords):
         doc_lengths.append(len(processed))
 
     avg_doc_length = total_terms / len(docs) if docs else 0
-    avg_token_length = total_token_chars / len(distinct_tokens) if distinct_tokens else 0
-    avg_term_length = total_term_chars / len(distinct_terms) if distinct_terms else 0
+    avg_token_length = total_token_chars / total_tokens if total_tokens else 0
+    avg_term_length = total_term_chars / total_terms if total_terms else 0
 
     return {
         "total_tokens": total_tokens,

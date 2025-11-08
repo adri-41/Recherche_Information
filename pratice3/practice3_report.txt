@@ -148,3 +148,71 @@ Top-10 documents:
  9. doc=8080270  RSV=0.104468
 10. doc=18808873  RSV=0.103102
 
+Collection size (N): 9804
+Total weighting time : 11.449 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 2.367428
+RSV(doc=23724) = 7.369951
+Top-10 documents:
+ 1. doc=18336216  RSV=7.593819
+ 2. doc=23724  RSV=7.369951
+ 3. doc=448834  RSV=7.050838
+ 4. doc=207747  RSV=7.035908
+ 5. doc=8967626  RSV=6.926928
+ 6. doc=1803281  RSV=6.846160
+ 7. doc=17906559  RSV=6.703489
+ 8. doc=2086074  RSV=6.700673
+ 9. doc=9567871  RSV=6.689545
+10. doc=719095  RSV=6.668482
+
+Collection size (N): 9804
+Total weighting time : 5.695 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 2.367428
+RSV(doc=23724) = 7.369951
+Top-10 documents:
+ 1. doc=18336216  RSV=7.593819
+ 2. doc=23724  RSV=7.369951
+ 3. doc=448834  RSV=7.050838
+ 4. doc=207747  RSV=7.035908
+ 5. doc=8967626  RSV=6.926928
+ 6. doc=1803281  RSV=6.846160
+ 7. doc=17906559  RSV=6.703489
+ 8. doc=2086074  RSV=6.700673
+ 9. doc=9567871  RSV=6.689545
+10. doc=719095  RSV=6.668482
+
+Collection size (N): 9804
+Total weighting time : 6.830 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 2.367428
+RSV(doc=23724) = 7.369951
+Top-10 documents:
+ 1. doc=18336216  RSV=7.593819
+ 2. doc=23724  RSV=7.369951
+ 3. doc=448834  RSV=7.050838
+ 4. doc=207747  RSV=7.035908
+ 5. doc=8967626  RSV=6.926928
+ 6. doc=1803281  RSV=6.846160
+ 7. doc=17906559  RSV=6.703489
+ 8. doc=2086074  RSV=6.700673
+ 9. doc=9567871  RSV=6.689545
+10. doc=719095  RSV=6.668482
+
+Collection size (N): 9804
+Total weighting time : 5.354 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 2.367428
+RSV(doc=23724) = 7.369951
+Top-10 documents:
+ 1. doc=18336216  RSV=7.593819
+ 2. doc=23724  RSV=7.369951
+ 3. doc=448834  RSV=7.050838
+ 4. doc=207747  RSV=7.035908
+ 5. doc=8967626  RSV=6.926928
+ 6. doc=1803281  RSV=6.846160
+ 7. doc=17906559  RSV=6.703489
+ 8. doc=2086074  RSV=6.700673
+ 9. doc=9567871  RSV=6.689545
+10. doc=719095  RSV=6.668482
+
