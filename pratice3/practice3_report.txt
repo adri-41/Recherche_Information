@@ -335,3 +335,51 @@ Top-10 documents:
  9. doc=2086074  RSV=19.167073
 10. doc=149289  RSV=18.791423
 
+
+
+####################################################
+### EXERCICE 5: RANKED RETRIEVAL (BM25 weighting) ###
+####################################################
+Collection size (N): 9804
+Avg Document Length (avdl): 661.11
+Paramètres BM25: k1=1.2, b=0.75
+Total weighting time : 0.067 sec
+Query: "web ranking scoring algorithm"  (Termes traités: ['web', 'rank', 'score', 'algorithm'])
+Poids du terme "ranking" stemmé ("rank") dans doc=23724 [TF_adj] = 1.818117
+RSV(doc=23724) = 11.620971
+
+Top-10 documents:
+ 1. doc=3503154  RSV=12.007767
+ 2. doc=23724  RSV=11.620971
+ 3. doc=465576  RSV=11.590354
+ 4. doc=18096221  RSV=11.390926
+ 5. doc=18543218  RSV=11.334216
+ 6. doc=1009996  RSV=11.301593
+ 7. doc=6422823  RSV=11.182137
+ 8. doc=1793571  RSV=11.102288
+ 9. doc=1482394  RSV=10.957961
+10. doc=752465  RSV=10.323343
+
+
+####################################################
+### EXERCICE 5: RANKED RETRIEVAL (BM25 weighting) ###
+####################################################
+Collection size (N): 9804
+Avg Document Length (avdl): 661.11
+Paramètres BM25: k1=1.2, b=0.75
+Total weighting time : 0.031 sec
+Query: "web ranking scoring algorithm"  (Termes traités: ['web', 'rank', 'score', 'algorithm'])
+Poids du terme "ranking" stemmé ("rank") dans doc=23724 [TF_adj] = 1.818117
+RSV(doc=23724) = 11.620971
+
+Top-10 documents:
+ 1. doc=3503154  RSV=12.007767
+ 2. doc=23724  RSV=11.620971
+ 3. doc=465576  RSV=11.590354
+ 4. doc=18096221  RSV=11.390926
+ 5. doc=18543218  RSV=11.334216
+ 6. doc=1009996  RSV=11.301593
+ 7. doc=6422823  RSV=11.182137
+ 8. doc=1793571  RSV=11.102288
+ 9. doc=1482394  RSV=10.957961
+10. doc=752465  RSV=10.323343

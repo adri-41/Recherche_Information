@@ -119,18 +119,19 @@ def main():
     parser.add_argument("--query", default="web ranking scoring algorithm", help="Requête à scorer.")
     args = parser.parse_args()
 
-    t0 = time.time()
     docs = load_collection(args.data)
     N = len(docs)
 
     stopwords = load_stopwords(args.stop)
-
     postings, df, doc_ids, stemmer, stem_cache = build_tf_df(docs, stopwords)
-    weighted_postings, idf = compute_ltn_weights(postings, df, N)
-    weighting_time = time.time() - t0
 
+    t0 = time.time()
+
+    weighted_postings, idf = compute_ltn_weights(postings, df, N)
     q_terms = preprocess_terms(tokenizer(args.query), stopwords, stemmer, stem_cache)
     scores = score_query_ltn(weighted_postings, q_terms)
+
+    weighting_time = time.time() - t0
 
     target = args.docno
     term_raw = "ranking"

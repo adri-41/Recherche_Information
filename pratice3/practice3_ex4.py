@@ -105,17 +105,18 @@ def main():
         print(f"[ERREUR] Fichier introuvable : {args.stop}")
         return
 
-    t0 = time.time()
     with open(args.data, "r", encoding="utf-8") as f:
         text = f.read()
     stopwords = load_stopwords(args.stop)
-
     doc_tfs, df, N, ps, stem_cache = build_tf_df(text, stopwords)
-    doc_ltc, idf = compute_ltc_weights(doc_tfs, df, N)
-    weighting_time = time.time() - t0
 
+    t0 = time.time()
+
+    doc_ltc, idf = compute_ltc_weights(doc_tfs, df, N)
     q_tokens = preprocess_tokens(tokenize(args.query), stopwords, ps, stem_cache)
     scores = score_ltc_docs_lnn_query(doc_ltc, q_tokens)
+
+    weighting_time = time.time() - t0
 
     target = args.docno
 
