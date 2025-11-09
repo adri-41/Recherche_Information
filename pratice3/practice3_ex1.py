@@ -12,9 +12,16 @@ def read_documents(text):
         docs.append((doc_id, contained))
     return docs
 
-def tokenizer(text):
-    t = text.lower()
-    return re.findall(r"[a-z]+", t)
+
+def tokenizer_tokens(text):
+    """Tokenisation normalisée : minuscules uniquement."""
+    return re.findall(r"[a-z]+", text.lower())
+
+
+def tokenizer_terms(text):
+    """Tokenisation des termes : respecte la casse (A–Z et a–z)."""
+    return re.findall(r"[A-Za-z]+", text)
+
 
 def compute_stats(docs):
     total_tokens = 0
@@ -28,18 +35,22 @@ def compute_stats(docs):
     doc_lengths = []
 
     for _, content in docs:
-        tokens = tokenizer(content)
+        tokens = tokenizer_tokens(content)
+        terms = tokenizer_terms(content)
+
         doc_lengths.append(len(tokens))
 
+        # Statistiques sur les tokens
         total_tokens += len(tokens)
         distinct_tokens.update(tokens)
         total_token_chars += sum(len(t) for t in tokens)
 
-        total_terms += len(tokens)
-        distinct_terms.update(tokens)
-        total_term_chars += sum(len(t) for t in tokens)
+        # Statistiques sur les termes
+        total_terms += len(terms)
+        distinct_terms.update(terms)
+        total_term_chars += sum(len(t) for t in terms)
 
-    avg_doc_length = total_terms / len(docs) if docs else 0
+    avg_doc_length = total_tokens / len(docs) if docs else 0
     avg_token_length = total_token_chars / total_tokens if total_tokens else 0
     avg_term_length = total_term_chars / total_terms if total_terms else 0
 
@@ -54,11 +65,10 @@ def compute_stats(docs):
     }
 
 
-
 def main():
     start = time.time()
 
-    data_path = os.path.join(os.getcwd(), r"Practice_03_data\Text_Only_Ascii_Coll_NoSem")
+    data_path = os.path.join(os.getcwd(), r"Practice_03_data", "Text_Only_Ascii_Coll_NoSem")
     if not os.path.exists(data_path):
         print(f"Fichier introuvable : {data_path}")
         return

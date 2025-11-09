@@ -39,7 +39,7 @@ def build_tf_df(docs_iter):
 
 def compute_ltn_weights(postings, df, N):
     weighted = {}
-    idf = {t: math.log10(N / df_t) for t, df_t in df.items() if df_t > 0}
+    idf = {t: math.log(N / df_t) for t, df_t in df.items() if df_t > 0}
     for t, doc_tf in postings.items():
         w_for_t = {}
         idf_t = idf.get(t, 0.0)
@@ -48,28 +48,19 @@ def compute_ltn_weights(postings, df, N):
             continue
         for d, tf_td in doc_tf.items():
             if tf_td > 0:
-                w_for_t[d] = (1.0 + math.log10(tf_td)) * idf_t
+                w_for_t[d] = (1.0 + math.log(tf_td)) * idf_t
         weighted[t] = w_for_t
     return weighted, idf
 
 
 def score_query_ltn(weighted_postings, idf, N, query_tokens):
-    q_tf = Counter(query_tokens)
-    wq = {}
-    for t, tf_tq in q_tf.items():
-        if tf_tq <= 0:
-            continue
-        idf_t = idf.get(t, 0.0)
-        if idf_t <= 0:
-            continue
-        wq[t] = (1.0 + math.log10(tf_tq)) * idf_t
-
+    """RSV binaire : somme des w_{t,d} pour chaque terme de la requête"""
     scores = defaultdict(float)
-    for t, w_tq in wq.items():
+    for t in set(query_tokens):
         postings_t = weighted_postings.get(t, {})
         for d, w_td in postings_t.items():
-            scores[d] += w_td * w_tq
-    return scores, wq
+            scores[d] += w_td
+    return scores
 
 
 def load_collection(path):
@@ -98,7 +89,7 @@ def main():
     weighting_time = time.time() - t0
 
     q_tokens = tokenizer(args.query)
-    scores, wq = score_query_ltn(weighted_postings, idf, N, q_tokens)
+    scores = score_query_ltn(weighted_postings, idf, N, q_tokens)
 
     target = args.docno
     term = "ranking"

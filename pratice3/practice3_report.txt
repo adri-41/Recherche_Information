@@ -216,3 +216,122 @@ Top-10 documents:
  9. doc=9567871  RSV=6.689545
 10. doc=719095  RSV=6.668482
 
+Collection size (N): 9804
+Total weighting time : 8.791 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 8.820741
+RSV(doc=23724) = 60.074929
+Top-10 documents:
+ 1. doc=18336216  RSV=68.645854
+ 2. doc=8967626  RSV=60.504411
+ 3. doc=23724  RSV=60.074929
+ 4. doc=448834  RSV=59.535772
+ 5. doc=1803281  RSV=59.518386
+ 6. doc=207747  RSV=59.353509
+ 7. doc=17906559  RSV=57.776645
+ 8. doc=2086074  RSV=57.742263
+ 9. doc=9567871  RSV=57.606418
+10. doc=719095  RSV=57.349280
+
+Collection size (N): 9804
+Total weighting time : 5.700 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 2.367428
+RSV(doc=23724) = 7.120702
+Top-10 documents:
+ 1. doc=23724  RSV=7.120702
+ 2. doc=448834  RSV=6.109854
+ 3. doc=207747  RSV=5.771573
+ 4. doc=18336216  RSV=5.700556
+ 5. doc=2292623  RSV=5.324282
+ 6. doc=2606518  RSV=5.244861
+ 7. doc=6861556  RSV=5.219977
+ 8. doc=18963457  RSV=5.199142
+ 9. doc=363695  RSV=5.192849
+10. doc=719095  RSV=5.145851
+
+Collection size (N): 9804
+Total weighting time : 10.445 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 2.367428
+RSV(doc=23724) = 7.120702
+Top-10 documents:
+ 1. doc=23724  RSV=7.120702
+ 2. doc=448834  RSV=6.109854
+ 3. doc=207747  RSV=5.771573
+ 4. doc=18336216  RSV=5.700556
+ 5. doc=2292623  RSV=5.324282
+ 6. doc=2606518  RSV=5.244861
+ 7. doc=6861556  RSV=5.219977
+ 8. doc=18963457  RSV=5.199142
+ 9. doc=363695  RSV=5.192849
+10. doc=719095  RSV=5.145851
+
+Collection size (N): 9804
+Total weighting time : 5.500 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 8.820741
+RSV(doc=23724) = 25.959699
+Top-10 documents:
+ 1. doc=23724  RSV=25.959699
+ 2. doc=448834  RSV=22.691282
+ 3. doc=18336216  RSV=22.319043
+ 4. doc=207747  RSV=20.897750
+ 5. doc=363695  RSV=19.469537
+ 6. doc=719095  RSV=19.378052
+ 7. doc=1803281  RSV=19.300408
+ 8. doc=8967626  RSV=19.187154
+ 9. doc=2086074  RSV=19.167073
+10. doc=149289  RSV=18.791423
+
+Collection size (N): 9804
+Total weighting time : 5.503 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 2.367428
+RSV(doc=23724) = 7.120702
+Top-10 documents:
+ 1. doc=23724  RSV=7.120702
+ 2. doc=448834  RSV=6.109854
+ 3. doc=207747  RSV=5.771573
+ 4. doc=18336216  RSV=5.700556
+ 5. doc=2292623  RSV=5.324282
+ 6. doc=2606518  RSV=5.244861
+ 7. doc=6861556  RSV=5.219977
+ 8. doc=18963457  RSV=5.199142
+ 9. doc=363695  RSV=5.192849
+10. doc=719095  RSV=5.145851
+
+Collection size (N): 9804
+Total weighting time : 10.019 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 8.820741
+RSV(doc=23724) = 25.959699
+Top-10 documents:
+ 1. doc=23724  RSV=25.959699
+ 2. doc=448834  RSV=22.691282
+ 3. doc=18336216  RSV=22.319043
+ 4. doc=207747  RSV=20.897750
+ 5. doc=363695  RSV=19.469537
+ 6. doc=719095  RSV=19.378052
+ 7. doc=1803281  RSV=19.300408
+ 8. doc=8967626  RSV=19.187154
+ 9. doc=2086074  RSV=19.167073
+10. doc=149289  RSV=18.791423
+
+Collection size (N): 9804
+Total weighting time : 10.193 sec
+Query: "web ranking scoring algorithm"  (tokens: ['web', 'ranking', 'scoring', 'algorithm'])
+Weight(term="ranking", doc=23724) = 8.820741
+RSV(doc=23724) = 25.959699
+Top-10 documents:
+ 1. doc=23724  RSV=25.959699
+ 2. doc=448834  RSV=22.691282
+ 3. doc=18336216  RSV=22.319043
+ 4. doc=207747  RSV=20.897750
+ 5. doc=363695  RSV=19.469537
+ 6. doc=719095  RSV=19.378052
+ 7. doc=1803281  RSV=19.300408
+ 8. doc=8967626  RSV=19.187154
+ 9. doc=2086074  RSV=19.167073
+10. doc=149289  RSV=18.791423
+
