@@ -14,13 +14,13 @@ def read_documents(text):
 
 
 def tokenizer_tokens(text):
-    """Tokenisation normalisée : minuscules uniquement."""
-    return re.findall(r"[a-z]+", text.lower())
+    """Tokenisation normalisée : respecte la casse (A–Z et a–z)."""
+    return re.findall(r"[A-Za-z]+", text)
 
 
 def tokenizer_terms(text):
-    """Tokenisation des termes : respecte la casse (A–Z et a–z)."""
-    return re.findall(r"[A-Za-z]+", text)
+    """Tokenisation des termes : minuscules uniquement."""
+    return re.findall(r"[a-z]+", text.lower())
 
 
 def compute_stats(docs):

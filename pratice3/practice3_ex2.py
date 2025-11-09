@@ -10,13 +10,13 @@ def read_documents(text):
 
 
 def tokenizer_terms(text):
-    """Retourne les termes (respecte la casse)."""
-    return re.findall(r"[A-Za-z]+", text)
+    """Retourne les termes (normalisés en minuscules)."""
+    return re.findall(r"[a-z]+", text.lower())
 
 
 def tokenizer_tokens(text):
-    """Retourne les tokens (normalisés en minuscules)."""
-    return re.findall(r"[a-z]+", text.lower())
+    """Retourne les tokens (respecte la casse)."""
+    return re.findall(r"[A-Za-z]+", text)
 
 
 def compute_stats(docs, stopwords):

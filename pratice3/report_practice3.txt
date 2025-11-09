@@ -14,10 +14,10 @@ Nom de l'équipe : AdrienSoleneWilliam
 
 Temps total d'indexation : 4.31 secondes
 Total #tokens : 10,913,214
-Total #distinct tokens : 206,913
+Total #distinct tokens : 257,840
 Moyenne longueur tokens : 5.20 caractères
 Total #terms : 10,913,214
-Total #distinct terms : 257,840
+Total #distinct terms : 206,913
 Longueur moyenne des documents : 1113.14 termes
 Moyenne longueur des termes : 5.20 caractères
 
@@ -26,10 +26,10 @@ Moyenne longueur des termes : 5.20 caractères
 
 Temps total d'indexation : 6.06 secondes
 Total #tokens : 10,913,214
-Total #distinct tokens : 206,913
+Total #distinct tokens : 257,840
 Moyenne longueur tokens : 5.20 caractères
 Total #terms : 6,481,553
-Total #distinct terms : 168,205
+Total #distinct terms : 168,444
 Longueur moyenne des documents : 661.11 termes
 Moyenne longueur des termes : 5.58 caractères
 
