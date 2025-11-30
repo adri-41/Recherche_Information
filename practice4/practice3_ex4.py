@@ -61,7 +61,6 @@ def compute_ltc_weights(postings, df, N):
     weighted_postings = {}
     doc_norms = defaultdict(float)
 
-    # 1) calcul des poids bruts tf-idf (l * t)
     for term, plist in postings.items():
         if df[term] == 0:
             continue
@@ -71,13 +70,12 @@ def compute_ltc_weights(postings, df, N):
             if tf <= 0:
                 continue
 
-            w_td = (1.0 + math.log10(tf)) * idf  # l * t
+            w_td = (1.0 + math.log10(tf)) * idf 
             if term not in weighted_postings:
                 weighted_postings[term] = {}
             weighted_postings[term][doc_id] = w_td
             doc_norms[doc_id] += w_td * w_td
 
-    # 2) normalisation cosinus (c)
     for doc_id, norm_sq in doc_norms.items():
         norm = math.sqrt(norm_sq) if norm_sq > 0 else 1.0
         for term, plist in weighted_postings.items():
@@ -90,10 +88,8 @@ def score_ltc_docs_lnn_query(weighted_postings, q_tokens):
 
     q_tf = Counter(q_tokens)
 
-    # 2) poids lnn requête (log tf, pas d'idf ni normalisation)
     q_w = {t: 1.0 + math.log10(tf) for t, tf in q_tf.items() if tf > 0}
 
-    # 3) score = produit scalaire entre w_{t,q} et w_{t,d}
     scores = defaultdict(float)
 
     for term, w_tq in q_w.items():
