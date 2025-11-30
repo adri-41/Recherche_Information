@@ -42,7 +42,7 @@ STOPFILE = os.path.join(DATA_DIR, "stop-words-english4.txt")
 
 
 # FONCTION DE GÉNÉRATION
-def generate_run(run_id, method, stopwords, stemmer, stem_cache, postings, df, doc_len, N, stop, stem):
+def generate_run(run_id, method, stopwords, stemmer, stem_cache, postings, df, doc_len, N, stop, stem, doc_ids):
     print(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print(f"  → Génération run {run_id}  ({method}, stop={stop}, stem={stem})")
     print(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -63,6 +63,7 @@ def generate_run(run_id, method, stopwords, stemmer, stem_cache, postings, df, d
     run_path = os.path.join(RUNS_OUTPUT_DIR, run_filename)
 
     total_lines_written = 0
+    all_doc_ids = list(doc_ids)
 
     try:
         with open(run_path, "w", encoding="utf-8") as f:
@@ -95,8 +96,23 @@ def generate_run(run_id, method, stopwords, stemmer, stem_cache, postings, df, d
                     print(f"      [ERREUR] Scoring query {qid} : {e}")
                     continue
 
-                # TOP 1500
+                print(f"      [DEBUG] {method} – {qid} : {len(scores)} docs scorés")
+
+                # TOP 1500 (ou moins si scores vide)
                 top_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
+
+                # 🔴 COMPLÉTION : si moins de 1500 docs, on rajoute des docs avec score 0
+                if len(top_docs) < 1500:
+                    print(f"      [WARN] Seulement {len(top_docs)} docs pour {qid}, on complète à 1500.")
+                    used_docs = {doc_id for doc_id, _ in top_docs}
+                    missing = 1500 - len(top_docs)
+
+                    for doc_id in all_doc_ids:
+                        if doc_id not in used_docs:
+                            top_docs.append((doc_id, 0.0))
+                            used_docs.add(doc_id)
+                            if len(top_docs) == 1500:
+                                break
 
                 for rank, (doc_id, score) in enumerate(top_docs, start=1):
                     f.write(f"{qid} Q0 {doc_id} {rank} {score:.5f} {TEAM} /article[1]\n")
@@ -177,7 +193,8 @@ for stop in stop_options:
                 doc_len,
                 N,
                 stop,
-                stem
+                stem,
+                doc_ids
             )
             run_paths.append(run_path)
             run_id_count += 1

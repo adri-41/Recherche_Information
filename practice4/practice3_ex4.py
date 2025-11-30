@@ -56,37 +56,53 @@ def build_tf_df(text, stopwords):
             df[t] += 1
     return doc_tfs, df, N, ps, stem_cache
 
-def compute_ltc_weights(doc_tfs, df, N):
+def compute_ltc_weights(postings, df, N):
    
-    idf = {t: idf_weight(N, df_t) for t, df_t in df.items()}
+    weighted_postings = {}
+    doc_norms = defaultdict(float)
 
-    raw = {}
-    for d, tf_counts in doc_tfs.items():
-        w = {}
-        for t, tf in tf_counts.items():
-            w[t] = l_weight(tf) * idf.get(t, 0.0)
-        raw[d] = w
-
-    ltc = {}
-    for d, w in raw.items():
-        norm_sq = sum(val * val for val in w.values())
-        if norm_sq <= 0:
-            ltc[d] = {}
+    # 1) calcul des poids bruts tf-idf (l * t)
+    for term, plist in postings.items():
+        if df[term] == 0:
             continue
-        norm = math.sqrt(norm_sq)
-        ltc[d] = {t: (val / norm) for t, val in w.items()}
-    return ltc, idf
+        idf = math.log10(N / df[term])
 
-def score_ltc_docs_lnn_query(doc_weights, q_tokens):
+        for doc_id, tf in plist.items():
+            if tf <= 0:
+                continue
+
+            w_td = (1.0 + math.log10(tf)) * idf  # l * t
+            if term not in weighted_postings:
+                weighted_postings[term] = {}
+            weighted_postings[term][doc_id] = w_td
+            doc_norms[doc_id] += w_td * w_td
+
+    # 2) normalisation cosinus (c)
+    for doc_id, norm_sq in doc_norms.items():
+        norm = math.sqrt(norm_sq) if norm_sq > 0 else 1.0
+        for term, plist in weighted_postings.items():
+            if doc_id in plist:
+                plist[doc_id] /= norm
+
+    return weighted_postings, doc_norms
+
+def score_ltc_docs_lnn_query(weighted_postings, q_tokens):
 
     q_tf = Counter(q_tokens)
-    q_w = {t: l_weight(tf) for t, tf in q_tf.items() if tf > 0}
+
+    # 2) poids lnn requête (log tf, pas d'idf ni normalisation)
+    q_w = {t: 1.0 + math.log10(tf) for t, tf in q_tf.items() if tf > 0}
+
+    # 3) score = produit scalaire entre w_{t,q} et w_{t,d}
     scores = defaultdict(float)
 
-    for t, wqt in q_w.items():
-        for d, w_td in ((d, w.get(t)) for d, w in doc_weights.items() if t in w):
-            scores[d] += w_td * wqt
-    return scores
+    for term, w_tq in q_w.items():
+        if term not in weighted_postings:
+            continue
+        for doc_id, w_td in weighted_postings[term].items():
+            scores[doc_id] += w_tq * w_td
+
+    return dict(scores)
 
 def main():
     ap = argparse.ArgumentParser(description="Exercise 4: SMART ltc ranked retrieval (stopwords + Porter)")
