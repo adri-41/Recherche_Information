@@ -15,8 +15,6 @@ DOC_PATTERN = re.compile(r"<doc>\s*<docno>\s*([^<\s]+)\s*</docno>(.*?)</doc>",
                          flags=re.IGNORECASE | re.DOTALL)
 
 
-# --- FONCTIONS GÉNÉRIQUES (Base Ex 2, 3, 4) ---
-
 def read_documents(text):
     """Générateur pour lire les documents à partir du texte de la collection."""
     for m in DOC_PATTERN.finditer(text):
@@ -69,51 +67,33 @@ def build_tf_df_and_lengths(docs_iter, stopwords, ps):
 # --- FONCTION BM25 ---
 
 def score_query_bm25(postings, df, doc_lengths, N, q_tokens, k1, b):
-    """
-    Calcule le RSV pour tous les documents en utilisant le modèle BM25.
-
-    RSV(d, q) = SUM [ IDF(t) * ( (tf_td * (k1 + 1)) / (tf_td + k1 * (1-b + b*dl_d/avdl)) ) ]
-    """
-
-    # Calcul de la longueur moyenne des documents (avdl)
     if not doc_lengths:
-        return {}  # Aucun document, pas de score
+        return {}, 0.0
 
     avdl = sum(doc_lengths.values()) / len(doc_lengths)
 
-    # Calcul de l'IDF (logarithme naturel est standard pour BM25)
-    # IDF(t) = ln( (N - df_t + 0.5) / (df_t + 0.5) )
     idf = {t: math.log((N - df_t + 0.5) / (df_t + 0.5))
-           for t, df_t in df.items() if df_t > 0 and df_t < N}  # df_t < N pour éviter log(0)
+           for t, df_t in df.items() if df_t > 0}
 
     scores = defaultdict(float)
 
-    # La requête est déjà tokénisée et stemmée/filtrée.
-    # On n'a pas besoin des TF de la requête (comme dans ltn/ltc) en BM25.
-
-    # Parcourir les termes de la requête
     for t in set(q_tokens):
         if t not in postings:
             continue
 
         idf_t = idf.get(t, 0.0)
-        if idf_t <= 0:  # Si l'IDF est non pertinent (terme trop fréquent ou inconnu)
-            continue
 
-        # Parcourir les documents qui contiennent le terme t
+
         for docno, tf_td in postings[t].items():
-            dl_d = doc_lengths.get(docno, avdl)  # Longueur du document
+            dl_d = doc_lengths.get(docno, avdl)
 
-            # Facteur de normalisation de longueur: k1 * ( (1-b) + b * (dl_d / avdl) )
             normalization_factor = k1 * ((1 - b) + b * (dl_d / avdl))
-
-            # Calcul du TF ajusté (TF_adj): tf_td * (k1 + 1) / (tf_td + normalization_factor)
             tf_adj = (tf_td * (k1 + 1)) / (tf_td + normalization_factor)
 
-            # Ajout de la contribution du terme au score du document (RSV)
             scores[docno] += idf_t * tf_adj
 
-    return scores, avdl  # On retourne avdl pour le debug si besoin
+    return scores, avdl
+
 
 
 # --- MAIN ---
