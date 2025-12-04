@@ -1,0 +1,46 @@
+Noms des membres de l'équipe :
+- TACHER Adrien
+- LECOMTE Solène
+- GOUJON William
+
+Nom de l'équipe : AdrienSoleneWilliam
+
+####################################################
+### RAPPORT TP n°4 : Evaluation ###
+####################################################
+
+--- Construction index (stop=nostop, stem=nostem) ---
+Index construit: terms=206,913, docs=9,804 (temps 3.50s)
+-> Génération run 14_ltn_article_nostop_nostem ...
+   -> AdrienSoleneWilliam_14_ltn_article_nostop_nostem.txt  (lignes 10500/10500)  time scoring: 0.58s  OK
+-> Génération run 15_ltc_article_nostop_nostem ...
+   -> AdrienSoleneWilliam_15_ltc_article_nostop_nostem.txt  (lignes 10500/10500)  time scoring: 3.03s  OK
+-> Génération run 16_bm25_article_nostop_nostem ...
+   -> AdrienSoleneWilliam_16_bm25_article_nostop_nostem.txt  (lignes 10500/10500)  time scoring: 0.68s  OK
+
+--- Construction index (stop=nostop, stem=porter) ---
+Index construit: terms=168,456, docs=9,804 (temps 9.62s)
+-> Génération run 17_ltn_article_nostop_porter ...
+   -> AdrienSoleneWilliam_17_ltn_article_nostop_porter.txt  (lignes 10500/10500)  time scoring: 1.03s  OK
+-> Génération run 18_ltc_article_nostop_porter ...
+   -> AdrienSoleneWilliam_18_ltc_article_nostop_porter.txt  (lignes 10500/10500)  time scoring: 3.17s  OK
+-> Génération run 19_bm25_article_nostop_porter ...
+   -> AdrienSoleneWilliam_19_bm25_article_nostop_porter.txt  (lignes 10500/10500)  time scoring: 0.72s  OK
+
+--- Construction index (stop=stop671, stem=nostem) ---
+Index construit: terms=206,294, docs=9,804 (temps 6.30s)
+-> Génération run 20_ltn_article_stop671_nostem ...
+   -> AdrienSoleneWilliam_20_ltn_article_stop671_nostem.txt  (lignes 10500/10500)  time scoring: 0.63s  OK
+-> Génération run 21_ltc_article_stop671_nostem ...
+   -> AdrienSoleneWilliam_21_ltc_article_stop671_nostem.txt  (lignes 10500/10500)  time scoring: 1.30s  OK
+-> Génération run 22_bm25_article_stop671_nostem ...
+   -> AdrienSoleneWilliam_22_bm25_article_stop671_nostem.txt  (lignes 10500/10500)  time scoring: 0.36s  OK
+
+--- Construction index (stop=stop671, stem=porter) ---
+Index construit: terms=168,205, docs=9,804 (temps 5.03s)
+-> Génération run 23_ltn_article_stop671_porter ...
+   -> AdrienSoleneWilliam_23_ltn_article_stop671_porter.txt  (lignes 10500/10500)  time scoring: 0.39s  OK
+-> Génération run 24_ltc_article_stop671_porter ...
+   -> AdrienSoleneWilliam_24_ltc_article_stop671_porter.txt  (lignes 10500/10500)  time scoring: 1.10s  OK
+-> Génération run 25_bm25_article_stop671_porter ...
+   -> AdrienSoleneWilliam_25_bm25_article_stop671_porter.txt  (lignes 10500/10500)  time scoring: 0.24s  OK

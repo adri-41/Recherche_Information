@@ -11,7 +11,6 @@ try:
 except Exception:
     PorterStemmer = None
 
-
 # ---------------------------
 # Config / paramètres
 # ---------------------------
@@ -30,7 +29,6 @@ QUERIES = {
     "2009078": "supervised machine learning algorithm",
     "2009085": "operating system mutual exclusion"
 }
-# QUERIES = {"1":"web ranking scoring algorithm"}
 
 TOP_K = 1500
 
@@ -38,7 +36,23 @@ TOP_K = 1500
 BM25_K1 = 1.2
 BM25_B = 0.75
 
-TOKEN_RE = re.compile(r"[a-z]+")  # tokenizer strict (minuscule)
+TOKEN_RE = re.compile(r"[A-Za-z]+")  # pour tokens (stats)
+TERM_RE = re.compile(r"[a-z]+")  # pour terms (indexation)
+
+
+def tokenizer_tokens(text):
+    return TOKEN_RE.findall(text)
+
+
+def tokenizer_terms(text):
+    return TERM_RE.findall(text.lower())
+
+
+# Analyse single doc/term:
+TARGET_DOC = "23724"
+TARGET_QUERY_ID = "2009074"
+TARGET_QUERY_TEXT = QUERIES[TARGET_QUERY_ID]
+TARGET_TERM = "ranking"
 
 
 # ---------------------------
@@ -56,8 +70,10 @@ def ensure_dir(d):
 # ---------------------------
 # I/O : chargement collection & stopwords
 # ---------------------------
-DOC_PATTERN = re.compile(r"<doc>\s*<docno>\s*([^<\s]+)\s*</docno>(.*?)</doc>",
-                         flags=re.IGNORECASE | re.DOTALL)
+DOC_PATTERN = re.compile(
+    r"<doc>\s*<docno>\s*([^<\s]+)\s*</docno>(.*?)</doc>",
+    flags=re.IGNORECASE | re.DOTALL
+)
 
 
 def load_collection(path):
@@ -97,7 +113,6 @@ def preprocess_tokens(tokens, stopset, stemmer, stem_cache):
         if stemmer is None:
             out.append(t)
         else:
-            # cache du stem pour gagner du temps
             s = stem_cache.get(t)
             if s is None:
                 s = stemmer.stem(t)
@@ -111,12 +126,7 @@ def preprocess_tokens(tokens, stopset, stemmer, stem_cache):
 # ---------------------------
 def build_index(docs, stopset, stemmer):
     """
-    Construit postings, df, doc_len (length after preprocessing).
-    - docs : liste (docid, content)
-    - stopset : set de stopwords (lowercase)
-    - stemmer : instance ayant .stem() ou None
-    Retour : postings (term -> {docid: tf}), df (term -> docfreq), doc_len (docid -> len),
-             doc_ids (liste), stem_cache (dict)
+    Construit l'index inversé, calcule DF, doc_len, stem_cache et les statistiques.
     """
     stem_cache = {}
     postings = defaultdict(lambda: defaultdict(int))
@@ -124,115 +134,123 @@ def build_index(docs, stopset, stemmer):
     doc_len = {}
     doc_ids = []
 
+    # Stats
+    total_tokens = 0
+    total_token_chars = 0
+    distinct_tokens = set()
+    total_terms = 0
+    total_term_chars = 0
+    distinct_terms = set()
+
     for docid, content in docs:
         doc_ids.append(docid)
-        tokens = tokenizer(content)
-        terms = preprocess_tokens(tokens, stopset, stemmer, stem_cache)
+
+        # --- Tokens pour stats ---
+        tokens = re.findall(r"[A-Za-z]+", content)
+        total_tokens += len(tokens)
+        distinct_tokens.update(tokens)
+        total_token_chars += sum(len(t) for t in tokens)
+
+        # --- Terms pour index ---
+        terms = re.findall(r"[a-z]+", content.lower())
+        terms = preprocess_tokens(terms, stopset, stemmer, stem_cache)
+
         doc_len[docid] = len(terms)
+        total_terms += len(terms)
+        total_term_chars += sum(len(t) for t in terms)
+        distinct_terms.update(terms)
+
+        # Construction de l'index inversé
         tf_counter = Counter(terms)
         for term, tf in tf_counter.items():
             postings[term][docid] = tf
             df[term] += 1
 
-    return postings, df, doc_len, doc_ids, stem_cache
+    stats = {
+        "total_tokens": total_tokens,
+        "distinct_tokens": len(distinct_tokens),
+        "avg_token_len": sum(len(t) for t in distinct_tokens) / len(distinct_tokens) if distinct_tokens else 0,
+        "total_terms": total_terms,
+        "distinct_terms": len(distinct_terms),
+        "avg_doc_len": total_terms / len(docs) if docs else 0,
+        "avg_term_len": sum(len(t) for t in distinct_terms) / len(distinct_terms) if distinct_terms else 0,
+    }
+
+    return postings, df, doc_len, doc_ids, stem_cache, stats
 
 
 # ---------------------------
-# LTN : calcul des poids et scoring
+# LTN
 # ---------------------------
 def compute_ltn_weights(postings, df, N):
-    """
-    Compute weighted_postings: term -> {docid: w_td}
-    w_td = (1 + log10(tf_td)) * log10(N/df_t)
-    """
     weighted = {}
     idf = {}
     for t, df_t in df.items():
-        if df_t > 0:
-            idf[t] = math.log10(N / df_t)
-        else:
-            idf[t] = 0.0
+        idf[t] = math.log10(N / df_t) if df_t > 0 else 0.0
 
     for t, plist in postings.items():
-        idf_t = idf.get(t, 0.0)
-        if idf_t <= 0.0:
+        idf_t = idf[t]
+        if idf_t <= 0:
             weighted[t] = {}
             continue
         wmap = {}
         for d, tf in plist.items():
-            if tf > 0:
-                wmap[d] = (1.0 + math.log10(tf)) * idf_t
+            wmap[d] = (1 + math.log10(tf)) * idf_t
         weighted[t] = wmap
     return weighted, idf
 
 
 def score_query_ltn(weighted_postings, query_terms):
-    """
-    Scoring LTN with query weighting (1 + log10(tf_q)) * (sum w_td * w_tq)
-    Implementation mirrors your previous practice where query is weighted.
-    """
     q_tf = Counter(query_terms)
-    q_w = {t: (1.0 + math.log10(tf)) for t, tf in q_tf.items() if tf > 0}
+    q_w = {t: 1 + math.log10(tf) for t, tf in q_tf.items()}
     scores = defaultdict(float)
+
     for t, wq in q_w.items():
-        postings_t = weighted_postings.get(t, {})
-        for d, wtd in postings_t.items():
+        for d, wtd in weighted_postings.get(t, {}).items():
             scores[d] += wtd * wq
+
     return scores
 
 
 # ---------------------------
-# LTC : compute weights with doc normalization and scoring (lnn query)
+# LTC
 # ---------------------------
 def compute_ltc_weights(postings, df, N):
-    """
-    Compute weighted_postings normalized per document (ltc):
-    w_td = (1 + log10(tf_td)) * idf_t
-    then divide by doc norm (sqrt(sum w_td^2)) per doc
-    Returns weighted_postings (term -> {doc: w_td_norm}) and doc_norms (raw norms)
-    """
     weighted = {}
     doc_norm_sq = defaultdict(float)
 
-    # first pass: compute raw w_td and accumulate norm squared
+    # compute raw weights
     for t, plist in postings.items():
-        df_t = df.get(t, 0)
+        df_t = df[t]
         if df_t <= 0:
             continue
         idf_t = math.log10(N / df_t)
         for d, tf in plist.items():
-            if tf <= 0:
-                continue
-            w = (1.0 + math.log10(tf)) * idf_t
+            w = (1 + math.log10(tf)) * idf_t
             weighted.setdefault(t, {})[d] = w
             doc_norm_sq[d] += w * w
 
-    # second pass: normalize per document
+    # normalize
     for t, plist in weighted.items():
         for d, w in list(plist.items()):
-            norm = math.sqrt(doc_norm_sq.get(d, 1.0))
-            if norm > 0:
-                plist[d] = w / norm
-            else:
-                plist[d] = 0.0
+            norm = math.sqrt(doc_norm_sq[d])
+            plist[d] = w / norm if norm > 0 else 0.0
 
     return weighted, doc_norm_sq
 
 
 def score_query_ltc(weighted_postings, query_terms):
-    """
-    Query weighting using lnn for the query: w_tq = 1 + log10(tf_q)
-    Score is dot product of normalized doc vectors and query weights
-    """
     q_tf = Counter(query_terms)
-    q_w = {t: 1.0 + math.log10(tf) for t, tf in q_tf.items() if tf > 0}
+    q_w = {t: 1 + math.log10(tf) for t, tf in q_tf.items()}
     scores = defaultdict(float)
+
     for t, wq in q_w.items():
         plist = weighted_postings.get(t)
         if not plist:
             continue
         for d, wtd in plist.items():
             scores[d] += wtd * wq
+
     return scores
 
 
@@ -240,163 +258,210 @@ def score_query_ltc(weighted_postings, query_terms):
 # BM25
 # ---------------------------
 def score_query_bm25(postings, df, doc_len, N, query_terms, k1=BM25_K1, b=BM25_B):
-    """
-    Standard BM25 scoring (idf using log((N-df+0.5)/(df+0.5))).
-    Returns dict(docid -> score), avdl
-    """
-    if len(doc_len) == 0:
-        return {}, 0.0
+    if not doc_len:
+        return {}, 0
     avdl = sum(doc_len.values()) / len(doc_len)
-    idf = {}
-    for t, df_t in df.items():
-        if df_t > 0:
-            idf[t] = math.log((N - df_t + 0.5) / (df_t + 0.5) + 1e-12)  # small eps
-        else:
-            idf[t] = 0.0
 
     scores = defaultdict(float)
-    q_terms_set = set(query_terms)
-    for t in q_terms_set:
+
+    for t in set(query_terms):
         if t not in postings:
             continue
-        idf_t = idf.get(t, 0.0)
+
+        df_t = df[t]
+        idf_t = math.log((N - df_t + 0.5) / (df_t + 0.5))
+
         for d, tf in postings[t].items():
-            dl = doc_len.get(d, avdl)
-            denom = tf + k1 * ((1.0 - b) + b * (dl / avdl))
-            tf_adj = (tf * (k1 + 1.0)) / denom
+            dl = doc_len[d]
+            denom = tf + k1 * ((1 - b) + b * (dl / avdl))
+            tf_adj = (tf * (k1 + 1)) / denom
             scores[d] += idf_t * tf_adj
+
     return scores, avdl
 
 
 # ---------------------------
-# Helper pour top-k + padding
+# Helper top-k avec padding
 # ---------------------------
-def top_k_with_padding(scores_dict, all_doc_ids, k=TOP_K):
-    """
-    Returns top-k list of (docid, score). If less than k docs have non-zero scores,
-    pad with docids (score=0.0) from all_doc_ids (in deterministic order).
-    """
-    ranked = sorted(scores_dict.items(), key=lambda x: x[1], reverse=True)
+def top_k_with_padding(scores, doc_ids, k=TOP_K):
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     if len(ranked) >= k:
         return ranked[:k]
-    # pad
+
     used = set(d for d, _ in ranked)
-    pad = []
-    for d in all_doc_ids:
-        if d not in used:
-            pad.append((d, 0.0))
-            if len(ranked) + len(pad) >= k:
-                break
+    pad = [(d, 0.0) for d in doc_ids if d not in used][:k - len(ranked)]
     return ranked + pad
 
 
 # ---------------------------
-# Run generation (single combo)
+# Analyse single document + top5
 # ---------------------------
-def generate_one_run(run_name, method, postings, df, doc_len, doc_ids, N, queries,
-                     stopset, stemmer, stem_cache, out_dir):
-    """
-    method in {'ltn','ltc','bm25'}
-    """
+def analyse_single_method(method, postings, df, doc_len, N,
+                          stopset, stemmer, stem_cache):
+    print(f"\n========== ANALYSE {method.upper()} (doc {TARGET_DOC}) ==========")
+
+    q_terms = preprocess_tokens(
+        tokenizer(TARGET_QUERY_TEXT),
+        stopset, stemmer, stem_cache
+    )
+
+    tok = TARGET_TERM.lower()
+    term_stem = tok if stemmer is None else stemmer.stem(tok)
+
+    # ---- LTN ----
+    if method == "ltn":
+        weighted, _ = compute_ltn_weights(postings, df, N)
+        scores = score_query_ltn(weighted, q_terms)
+
+        w_td = weighted.get(term_stem, {}).get(TARGET_DOC, 0)
+        print(f"Weight('{TARGET_TERM}', {TARGET_DOC}) = {w_td:.6f}")
+        print(f"RSV(q,{TARGET_DOC}) = {scores.get(TARGET_DOC, 0):.6f}")
+
+        top5 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+        print("\nTop-5 :")
+        for i, (d, s) in enumerate(top5, 1):
+            print(f"{i}. {d}  {s:.6f}")
+
+    # ---- LTC ----
+    elif method == "ltc":
+        weighted, _ = compute_ltc_weights(postings, df, N)
+        scores = score_query_ltc(weighted, q_terms)
+
+        w_td = weighted.get(term_stem, {}).get(TARGET_DOC, 0)
+        print(f"Weight('{TARGET_TERM}', {TARGET_DOC}) = {w_td:.6f}")
+        print(f"RSV(q,{TARGET_DOC}) = {scores.get(TARGET_DOC, 0):.6f}")
+
+        top5 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+        print("\nTop-5 :")
+        for i, (d, s) in enumerate(top5, 1):
+            print(f"{i}. {d}  {s:.6f}")
+
+    # ---- BM25 ----
+    else:
+        scores, avdl = score_query_bm25(postings, df, doc_len, N, q_terms)
+
+        tf = postings.get(term_stem, {}).get(TARGET_DOC, 0)
+        if tf > 0:
+            dl = doc_len[TARGET_DOC]
+            denom = tf + BM25_K1 * ((1 - BM25_B) + BM25_B * (dl / avdl))
+            tf_adj = (tf * (BM25_K1 + 1)) / denom
+        else:
+            tf_adj = 0.0
+
+        print(f"Weight('{TARGET_TERM}', {TARGET_DOC}) = {tf_adj:.6f}")
+        print(f"RSV(q,{TARGET_DOC}) = {scores.get(TARGET_DOC, 0):.6f}")
+
+        top5 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+        print("\nTop-5 :")
+        for i, (d, s) in enumerate(top5, 1):
+            print(f"{i}. {d}  {s:.6f}")
+
+
+# ---------------------------
+# Génère un run
+# ---------------------------
+def generate_one_run(run_name, method, postings, df, doc_len, doc_ids, N,
+                     queries, stopset, stemmer, stem_cache, out_dir):
     ensure_dir(out_dir)
-    run_path = os.path.join(out_dir, f"{TEAM}_{run_name}_{method}.txt")
-    # Precompute weights if needed
-    weighted = None
-    extra = {}
+    run_path = os.path.join(out_dir, f"{TEAM}_{run_name}.txt")
+
     if method == "ltn":
         weighted, _ = compute_ltn_weights(postings, df, N)
     elif method == "ltc":
         weighted, _ = compute_ltc_weights(postings, df, N)
-    # bm25 doesn't need pre-weight
+    else:
+        weighted = None
 
-    lines_written = 0
+    count = 0
     with open(run_path, "w", encoding="utf-8") as f:
         for qid, qtext in queries.items():
-            q_tokens_raw = tokenizer(qtext)
-            q_terms = preprocess_tokens(q_tokens_raw, stopset, stemmer, stem_cache)
-            # score according to method
-            try:
-                if method == "ltn":
-                    scores = score_query_ltn(weighted, q_terms)
-                elif method == "ltc":
-                    scores = score_query_ltc(weighted, q_terms)
-                elif method == "bm25":
-                    scores, _ = score_query_bm25(postings, df, doc_len, N, q_terms)
-                else:
-                    scores = {}
-            except Exception as e:
-                print(f"[WARN] erreur scoring {method} q={qid} : {e}")
-                scores = {}
+            q_terms = preprocess_tokens(tokenizer(qtext), stopset, stemmer, stem_cache)
 
-            topk = top_k_with_padding(scores, doc_ids, TOP_K)
-            for rank, (docid, score) in enumerate(topk, start=1):
-                f.write(f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} /article[1]\n")
-                lines_written += 1
+            if method == "ltn":
+                scores = score_query_ltn(weighted, q_terms)
+            elif method == "ltc":
+                scores = score_query_ltc(weighted, q_terms)
+            else:
+                scores, _ = score_query_bm25(postings, df, doc_len, N, q_terms)
 
-    expected = len(queries) * TOP_K
-    return run_path, lines_written, expected
+            ranked = top_k_with_padding(scores, doc_ids, TOP_K)
+
+            for rank, (docid, s) in enumerate(ranked, 1):
+                f.write(f"{qid} Q0 {docid} {rank} {s:.5f} {TEAM} /article[1]\n")
+                count += 1
+
+    return run_path, count, len(queries) * TOP_K
 
 
 # ---------------------------
 # Main: génération des 12 runs
 # ---------------------------
 def main():
-    print("=== Génération des 12 runs (nostop/stop × nostem/porter × ltn/ltc/bm25) ===")
-    # Vérifications
-    if not os.path.exists(DATAFILE):
-        print(f"[ERROR] Collection manquante : {DATAFILE}")
-        return
-    # load collection once
-    print("Lecture de la collection (une seule fois)...")
+    print("=== Génération des 12 runs ===")
+
     docs = load_collection(DATAFILE)
     print(f"Documents chargés : {len(docs)}")
 
-    # load stopwords set
     stop_full = load_stopwords(STOPFILE)
 
     stop_options = [("nostop", set()), ("stop671", stop_full)]
     stem_options = [("nostem", None), ("porter", PorterStemmer() if PorterStemmer else None)]
-
     methods = ["ltn", "ltc", "bm25"]
 
     ensure_dir(OUTPUT_DIR)
     run_paths = []
 
-    run_id = 1
+    run_id = 0
+
     for stop_name, stopset in stop_options:
         for stem_name, stemmer in stem_options:
-            # create stem_cache (shared per combination)
-            stem_cache = {}
-            # build index once for this (stop, stem) combo
-            print(f"\n--- Construction index (stop={stop_name}, stem={stem_name}) ---")
-            t0 = time.time()
-            postings, df, doc_len, doc_ids, stem_cache = build_index(docs, stopset, stemmer)
-            N = len(doc_ids)
-            t_index = time.time() - t0
-            print(f"Index construit: terms={len(df):,}, docs={N:,} (temps {t_index:.2f}s)")
 
+            stem_cache = {}
+            print(f"\n--- Construction index (stop={stop_name}, stem={stem_name}) ---")
+
+            t0 = time.time()
+            postings, df, doc_len, doc_ids, stem_cache, stats = build_index(docs, stopset, stemmer)
+            N = len(doc_ids)
+            print(f"Index construit en {time.time() - t0:.2f}s — {len(df):,} termes")
+
+            # Affichage TP4 (uniquement aux coordonnées demandées)
+            if stop_name == "nostop" and stem_name == "nostem":
+                print("\n=== LNT stats (sans stopword, sans stemmer) ===")
+                for k, v in stats.items():
+                    print(f"{k}: {v}")
+
+            if stop_name == "stop671" and stem_name == "porter":
+                print("\n=== LNT stats (avec stopword, avec porter) ===")
+                for k, v in stats.items():
+                    print(f"{k}: {v}")
+
+            # Runs
             for method in methods:
                 run_name = f"{run_id}_{method}_article_{stop_name}_{stem_name}"
-                print(f"→ Génération run {run_name} ...")
-                t0 = time.time()
+                print(f"\n-> Génération run {run_name} ...")
+
                 path, written, expected = generate_one_run(
                     run_name, method, postings, df, doc_len, doc_ids, N,
                     QUERIES, stopset, stemmer, stem_cache, OUTPUT_DIR
                 )
-                elapsed = time.time() - t0
+
+                print(f"  Fichier : {path} — {written}/{expected}")
+
+                # Analyse spéciale (UNIQUEMENT NOSTOP / NOSTEM)
+                if stop_name == "nostop" and stem_name == "nostem":
+                    analyse_single_method(method, postings, df, doc_len, N,
+                                          stopset, stemmer, stem_cache)
+
                 run_paths.append(path)
-                ok = "OK" if written == expected else f"INCOMPLET ({written}/{expected})"
-                print(f"   -> {os.path.basename(path)}  (lignes {written}/{expected})  time scoring: {elapsed:.2f}s  {ok}")
                 run_id += 1
 
-    # pack zip
+    # ZIP final
     zipname = f"{TEAM}_ALL_RUNS.zip"
     zip_path = os.path.join(OUTPUT_DIR, zipname)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in run_paths:
             zf.write(p, os.path.basename(p))
     print(f"\nZIP généré : {zip_path}")
-    print("Terminé.")
 
 
 if __name__ == "__main__":
