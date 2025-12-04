@@ -5,11 +5,8 @@ import math
 import zipfile
 from collections import defaultdict, Counter
 
-# Essayez d'importer NLTK PorterStemmer ; si absent on propose DummyStemmer
-try:
-    from nltk.stem import PorterStemmer
-except Exception:
-    PorterStemmer = None
+from nltk.stem import PorterStemmer, SnowballStemmer, LancasterStemmer
+
 
 # ---------------------------
 # Config / paramètres
@@ -397,7 +394,8 @@ def generate_one_run(run_name, method, postings, df, doc_len, doc_ids, N,
 # Main: génération des 12 runs
 # ---------------------------
 def main():
-    print("=== Génération des 12 runs ===")
+    start = time.time()
+    print("=== Génération des 49 runs ===")
 
     docs = load_collection(DATAFILE)
     print(f"Documents chargés : {len(docs)}")
@@ -405,7 +403,12 @@ def main():
     stop_full = load_stopwords(STOPFILE)
 
     stop_options = [("nostop", set()), ("stop671", stop_full)]
-    stem_options = [("nostem", None), ("porter", PorterStemmer() if PorterStemmer else None)]
+    stem_options = [
+        ("nostem", None),
+        ("porter", PorterStemmer()),
+        ("snowball", SnowballStemmer("english")),
+        ("lancaster", LancasterStemmer()),
+    ]
     methods = ["ltn", "ltc", "bm25"]
 
     ensure_dir(OUTPUT_DIR)
@@ -437,7 +440,27 @@ def main():
 
             # Runs
             for method in methods:
-                run_name = f"{run_id}_{method}_article_{stop_name}_{stem_name}"
+                if method == "bm25":
+                    if stem_name == "nostem" or stem_name == "porter":
+                        run_name = (
+                            f"{run_id}_test_{method}_article_{stop_name}_{stem_name}"
+                            f"_k{BM25_K1}_b{BM25_B}"
+                        )
+                    else:
+                        run_name = (
+                            f"{run_id}_{method}_article_{stop_name}_{stem_name}"
+                            f"_k{BM25_K1}_b{BM25_B}"
+                        )
+                else:
+                    if stem_name == "nostem" or stem_name == "porter":
+                        run_name = (
+                            f"{run_id}_test_{method}_article_{stop_name}_{stem_name}"
+                        )
+                    else:
+                        run_name = (
+                            f"{run_id}_{method}_article_{stop_name}_{stem_name}"
+                        )
+
                 print(f"\n-> Génération run {run_name} ...")
 
                 path, written, expected = generate_one_run(
@@ -455,6 +478,37 @@ def main():
                 run_paths.append(path)
                 run_id += 1
 
+    method = "bm25"
+    stop_name, stopset = "nostop", set()
+    stem_name, stemmer = "nostem", None
+    k1_values = [0.2, 1.0, 1.8, 2.6, 3.4]
+    b_values = [0.0, 0.25, 0.50, 0.75, 1.0]
+
+    print(f"\n--- Construction index (stop={stop_name}, stem={stem_name}) ---")
+    t0 = time.time()
+    postings, df, doc_len, doc_ids, stem_cache, stats = build_index(docs, stopset, stemmer)
+    N = len(doc_ids)
+    print(f"Index construit en {time.time() - t0:.2f}s — {len(df):,} termes")
+
+    for K1 in k1_values:
+        for B in b_values:
+            run_name = (
+                f"{run_id}_{method}_article_{stop_name}_{stem_name}"
+                f"_k{K1}_b{B}"
+            )
+
+            print(f"-> Génération run tuning {run_name} ...")
+
+            path, written, expected = generate_one_run(
+                run_name, method, postings, df, doc_len, doc_ids, N,
+                QUERIES, stopset, stemmer, stem_cache, OUTPUT_DIR
+            )
+
+            print(f"  Fichier : {path} — {written}/{expected}")
+
+            run_paths.append(path)
+            run_id += 1
+
     # ZIP final
     zipname = f"{TEAM}_ALL_RUNS.zip"
     zip_path = os.path.join(OUTPUT_DIR, zipname)
@@ -462,6 +516,10 @@ def main():
         for p in run_paths:
             zf.write(p, os.path.basename(p))
     print(f"\nZIP généré : {zip_path}")
+
+    end = time.time()
+    elapsed = end - start
+    print(elapsed)
 
 
 if __name__ == "__main__":
