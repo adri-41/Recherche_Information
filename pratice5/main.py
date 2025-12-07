@@ -3,6 +3,8 @@ import re
 import time
 import math
 import zipfile
+from bs4 import BeautifulSoup
+from lxml import etree
 from collections import defaultdict, Counter
 
 from nltk.stem import PorterStemmer, SnowballStemmer, LancasterStemmer
@@ -298,6 +300,143 @@ def generate_one_run(run_name, method, postings, df, doc_len, doc_ids, N,
     expected = len(queries) * TOP_K
     return run_path, count, expected
 
+def get_element_path(node):
+    path_parts = []
+    while node is not None and node.name is not None:
+        # Compte la position parmi les frères du même tag
+        if node.parent:
+            siblings = [s for s in node.parent.find_all(node.name, recursive=False)]
+            index = siblings.index(node) + 1
+        else:
+            index = 1
+        path_parts.insert(0, f"{node.name}[{index}]")
+        node = node.parent
+    return "/" + "/".join(path_parts)
+
+def extract_elements_xml(filepath, tags=("bdy","sec","p")):
+    """
+    Retourne une liste (element_id, text, path_in_xml) pour chaque élément XML choisi.
+    element_id = filename + "_" + tag + "_" + compteur
+    """
+    elements = []
+    fname = os.path.splitext(os.path.basename(filepath))[0]
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            xml_content = f.read()
+        soup = BeautifulSoup(xml_content, "xml")
+    except Exception as e:
+        print(f"Erreur parsing {filepath}: {e}")
+        return elements
+
+    article = soup.find("article")
+    if not article:
+        return elements
+
+    counter = {}
+    for tag in tags:
+        counter[tag] = 1
+        for node in article.find_all(tag):
+            text = node.get_text(" ", strip=True)
+            if text:
+                element_id = f"{fname}_{tag}_{counter[tag]}"
+
+                # Calculer le chemin complet depuis <article>
+                path_parts = []
+                current = node
+                while current != article:
+                    siblings = [s for s in current.parent.find_all(current.name, recursive=False)]
+                    index = siblings.index(current) + 1
+                    path_parts.insert(0, f"{current.name}[{index}]")
+                    current = current.parent
+                path_in_xml = "/article[1]/" + "/".join(path_parts)
+
+                elements.append((element_id, text, path_in_xml))
+                counter[tag] += 1
+    return elements
+
+def load_collection_elements(root_dir, tags=("bdy","sec","p")):
+    """
+    Parcourt tous les fichiers .xml et retourne une liste d'éléments
+    [(element_id, text, path_in_xml), ...]
+    """
+    elements = []
+    for fname in os.listdir(root_dir):
+        if not fname.lower().endswith(".xml"):
+            continue
+        path = os.path.join(root_dir, fname)
+        file_elements = extract_elements_xml(path, tags=tags)
+        if not file_elements:
+            print(f"Aucun élément trouvé dans {path}")
+        elements.extend(file_elements)
+    return elements
+
+def generate_elements_run(run_name, postings, df, doc_len, doc_ids, N,
+                          queries, stopset, stemmer, stem_cache, out_dir,
+                          element_paths=None):
+    """
+    Génère un fichier de run pour les éléments XML avec SMART LTN.
+    element_paths : dictionnaire {element_id: path_in_xml}
+    """
+    ensure_dir(out_dir)
+    run_path = os.path.join(out_dir, f"{TEAM}_{run_name}.txt")
+
+    # Calcul des poids LTN
+    weights = compute_ltn_weights(postings, df, N)
+
+    # Normalisation LTN
+    norm_sq = {}
+    for t, plist in weights.items():
+        for d, w in plist.items():
+            norm_sq[d] = norm_sq.get(d, 0.0) + w*w
+    norm = {d: math.sqrt(v) for d, v in norm_sq.items()}
+
+    weights_ltn = {}
+    for t, plist in weights.items():
+        for d, w in plist.items():
+            weights_ltn.setdefault(t, {})[d] = (w / norm[d]) if norm.get(d,0) > 0 else 0.0
+
+    with open(run_path, "w", encoding="utf-8") as f:
+        for qid, qtext in queries.items():
+            q_raw = tokenize_terms(qtext)
+            q_terms = preprocess(q_raw, stopset, stemmer, stem_cache)
+            scores = score_query_ltn(weights_ltn, q_terms)
+            ranked = top_k_with_padding(scores, doc_ids, TOP_K)
+            for rank, (docid, score) in enumerate(ranked, 1):
+                # Récupération du chemin XML depuis element_paths
+                path_in_xml = element_paths.get(docid, "/article[1]") if element_paths else "/article[1]"
+                f.write(f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} {path_in_xml}\n")
+
+    print(f"Run éléments généré: {run_path}")
+    return run_path
+
+def main_elements_run():
+    print("\n=== Exercise 3: Indexing XML elements (bdy, sec, p) ===")
+    docs_elements = load_collection_elements(DATA_DIR, tags=("bdy","sec","p"))
+    print(f"Nombre total d'éléments extraits: {len(docs_elements)}")
+
+    # Transformer docs_elements pour build_index
+    docs_elements_index = [(eid, text) for eid, text, path in docs_elements]
+    element_paths = {eid: path for eid, _, path in docs_elements}  # dictionnaire docid → path_in_xml
+
+    # Construire l'index (nostop / nostem)
+    stopset = set()
+    stemmer = None
+    stem_cache = {}
+
+    # Transformer docs_elements pour build_index
+    docs_elements_index = [(eid, text) for eid, text, path in docs_elements]
+
+    postings, df, doc_len, doc_ids, stem_cache, stats = build_index(docs_elements_index, stopset, stemmer)
+    N = len(doc_ids)
+    print(f"Index éléments construit: {len(df)} termes, {len(doc_ids)} éléments")
+
+    # Générer run
+    run_name = "12_testXML_ltn_element-bdy-sec-p_nostop_nostem"
+    generate_elements_run(
+        run_name, postings, df, doc_len, doc_ids, N,
+        QUERIES, stopset, stemmer, stem_cache, OUTPUT_DIR,
+        element_paths=element_paths
+    )
 
 # =======================
 # Main : runs exercice 4 + tuning BM25 (grille 5x5)
@@ -368,6 +507,10 @@ def main():
     end = time.time()
     print(f"Temps total: {end - start:.2f}s")
 
+    # ==========================
+    # Exercice 3 : runs "testXML"
+    # ==========================
+    main_elements_run()
 
 if __name__ == "__main__":
     main()
