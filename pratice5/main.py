@@ -40,6 +40,12 @@ TOKEN_RE = re.compile(r"[A-Za-z]+")
 TERM_RE = re.compile(r"[a-z]+")  
 TAG_RE = re.compile(r"<[^>]+>")
 
+FIELDS = {
+    "title": 2.0,
+    "bdy": 1.5,
+    "sec": 1.2,
+    "p": 1.0
+}
 
 # =======================
 # Utilitaires
@@ -481,7 +487,7 @@ def main_elements_runs_ex4():
 
     stop_full = load_stopwords(STOPFILE)
     stop_options = [("nostop", set()), ("stop671", stop_full)]
-    stem_options = [("nostem", None), ("porter", PorterStemmer())]
+    stem_options = [("nostem", None)]
     methods = ["ltn", "ltc", "bm25"]
 
     granularities = [
@@ -491,7 +497,7 @@ def main_elements_runs_ex4():
         ("bdy",),
    ]
 
-    run_id = 0
+    run_id = 13
     for tags in granularities:
         docs_elements = load_collection_elements(DATA_DIR, tags=tags)
         docs_elements_index = [(eid, text) for eid, text, _ in docs_elements]
@@ -507,7 +513,7 @@ def main_elements_runs_ex4():
 
                 for method in methods:
                     run_name = (
-                        f"{run_id}_testE4_{method}_element-{'-'.join(tags)}_"
+                        f"{run_id}_testXML_{method}_element-{'-'.join(tags)}_"
                         f"{stop_name}_{stem_name}"
                     )
                     generate_elements_run_any(
@@ -519,6 +525,93 @@ def main_elements_runs_ex4():
                     )
                     run_id += 1
 
+
+def build_article_index(data_dir, stopset, stemmer):
+    """
+    Construit un index BM25 pour tous les articles (texte complet).
+    """
+    docs = []
+    for fname in os.listdir(data_dir):
+        if not fname.endswith(".xml"):
+            continue
+        docid = os.path.splitext(fname)[0]
+        path = os.path.join(data_dir, fname)
+        # extraire tout le texte de l'article
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+        article = soup.find("article")
+        text = article.get_text(" ", strip=True) if article else ""
+        docs.append((docid, text))
+
+    return build_index(docs, stopset, stemmer)
+
+
+def generate_articles_bm25_run_variable_kb(
+    run_name_prefix,
+    postings, df, doc_len, doc_ids, N,
+    queries, stopset, stemmer, stem_cache, out_dir,
+    k1_values=[1.0, 1.2, 1.5], b_values=[0.5, 0.75, 0.9],
+    start_run_id=37
+):
+    """
+    Génère plusieurs runs BM25 sur l'article entier
+    avec numérotation automatique des runs.
+    """
+    ensure_dir(out_dir)
+    run_paths = []
+    run_id = start_run_id
+
+    for k1 in k1_values:
+        for b in b_values:
+            run_name = f"{run_id}_{run_name_prefix}_k{k1}_b{b}"
+            run_path = os.path.join(out_dir, f"{TEAM}_{run_name}.txt")
+
+            with open(run_path, "w", encoding="utf-8") as f:
+                for qid, qtext in queries.items():
+                    q_raw = tokenize_terms(qtext)
+                    q_terms = preprocess(q_raw, stopset, stemmer, stem_cache)
+                    scores, _ = score_query_bm25(
+                        postings, df, doc_len, N, q_terms, k1=k1, b=b
+                    )
+                    ranked = top_k_with_padding(scores, doc_ids, TOP_K)
+                    for rank, (docid, score) in enumerate(ranked, 1):
+                        f.write(
+                            f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} /article[1]\n"
+                        )
+
+            print(f"Run généré : {run_name}")
+            run_paths.append(run_path)
+            run_id += 1
+
+    return run_paths
+
+def main_articles_bm25_run():
+    print("\n=== Exercise 5: Articles BM25 runs ===")
+
+    stopset = load_stopwords(STOPFILE)
+    stemmer = PorterStemmer()
+    stem_cache = {}
+
+    postings, df, doc_len, doc_ids, stem_cache, stats = build_article_index(DATA_DIR, stopset, stemmer)
+    N = len(doc_ids)
+
+    generate_articles_bm25_run_variable_kb(
+        run_name_prefix="test2_BM25Fw_articles",
+        postings=postings,
+        df=df,
+        doc_len=doc_len,
+        doc_ids=doc_ids,
+        N=N,
+        queries=QUERIES,
+        stopset=stopset,
+        stemmer=stemmer,
+        stem_cache=stem_cache,
+        out_dir=OUTPUT_DIR,
+        k1_values=[1.0, 1.2, 1.5],
+        b_values=[0.5, 0.75, 0.9]
+    )
+
+    print("=== FIN EXERCICE 5 ===")
 
 # =======================
 # Main : runs exercice 4 + tuning BM25 (grille 5x5)
@@ -601,6 +694,10 @@ def main():
     # ==========================
     main_elements_runs_ex4()
 
+    # ==========================
+    # Exercice 5
+    # ==========================
+    main_articles_bm25_run()
 
 if __name__ == "__main__":
     main()
