@@ -36,8 +36,8 @@ BM25_K1 = 1.2
 BM25_B = 0.75
 
 # Deux regex distinctes : tokens (pour stats, casse conservée) et terms (pour indexation, minuscules)
-TOKEN_RE = re.compile(r"[A-Za-z]+")  # pour tokens (stats)
-TERM_RE = re.compile(r"[a-z]+")      # pour terms (indexation)
+TOKEN_RE = re.compile(r"[A-Za-z]+") 
+TERM_RE = re.compile(r"[a-z]+")  
 TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -69,10 +69,6 @@ def load_collection(path):
 
 
 def load_collection_xml(root_dir):
-    """
-    Parcourt tous les fichiers .xml dans root_dir
-    et renvoie une liste (docid, contenu_texte_sans_balises).
-    """
     docs = []
     for fname in os.listdir(root_dir):
         if not fname.lower().endswith(".xml"):
@@ -81,12 +77,19 @@ def load_collection_xml(root_dir):
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             raw = f.read()
 
-        text_no_tags = TAG_RE.sub(" ", raw)
-        docid = os.path.splitext(fname)[0]  
-        docs.append((docid, text_no_tags))
+        soup = BeautifulSoup(raw, "xml")
+        text = soup.get_text(" ", strip=False)  # texte sans balises (et plus propre côté XML)
+
+        docid = os.path.splitext(fname)[0]
+        docs.append((docid, text))
+
+    if "<" in text or ">" in text:
+        print("not good")
+    else:
+        print("all good") 
     return docs
 
-
+ 
 # =======================
 # Tokenisation / Preprocessing
 # =======================
@@ -480,6 +483,8 @@ def main():
                 print("\n=== Stats clés (nostop / nostem) ===")
                 for k, v in stats.items():
                     print(f"{k}: {v}")
+
+                    
 
             for method in methods:
                 if method == "bm25":
