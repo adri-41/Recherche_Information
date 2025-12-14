@@ -458,16 +458,18 @@ def main_elements_run():
     print(f"Nombre total d'éléments extraits: {len(docs_elements)}")
 
     # Transformer docs_elements pour build_index
-    docs_elements_index = [(eid, text) for eid, text, path in docs_elements]
-    element_paths = {eid: path for eid, _, path in docs_elements}  # dictionnaire docid → path_in_xml
+    docs_elements_index = []
+    element_paths = {}
+
+    for eid, text, path in docs_elements:
+        docid = eid.split("_")[0]  # ← 19729851
+        docs_elements_index.append((docid, text))
+        element_paths[docid] = path
 
     # Construire l'index (nostop / nostem)
     stopset = set()
     stemmer = None
     stem_cache = {}
-
-    # Transformer docs_elements pour build_index
-    docs_elements_index = [(eid, text) for eid, text, path in docs_elements]
 
     postings, df, doc_len, doc_ids, stem_cache, stats = build_index(docs_elements_index, stopset, stemmer)
     N = len(doc_ids)
@@ -500,8 +502,13 @@ def main_elements_runs_ex4():
     run_id = 13
     for tags in granularities:
         docs_elements = load_collection_elements(DATA_DIR, tags=tags)
-        docs_elements_index = [(eid, text) for eid, text, _ in docs_elements]
-        element_paths = {eid: path for eid, _, path in docs_elements}
+        docs_elements_index = []
+        element_paths = {}
+
+        for eid, text, path in docs_elements:
+            docid = eid.split("_")[0]
+            docs_elements_index.append((docid, text))
+            element_paths[docid] = path
 
         for stop_name, stopset in stop_options:
             for stem_name, stemmer in stem_options:
@@ -551,7 +558,7 @@ def generate_articles_bm25_run_variable_kb(
     postings, df, doc_len, doc_ids, N,
     queries, stopset, stemmer, stem_cache, out_dir,
     k1_values=[1.0, 1.2, 1.5], b_values=[0.5, 0.75, 0.9],
-    start_run_id=37
+    start_run_id=31
 ):
     """
     Génère plusieurs runs BM25 sur l'article entier
