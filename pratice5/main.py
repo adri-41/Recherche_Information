@@ -100,7 +100,8 @@ def tokenize_tokens(text):
 
 def tokenize_terms(text):
     """Tokenisation pour termes (indexation/requêtes) : minuscules uniquement."""
-    return TERM_RE.findall(text.lower())
+    return [t.lower() for t in TOKEN_RE.findall(text)]
+
 
 
 def preprocess(tokens, stopset, stemmer, cache):
@@ -412,6 +413,39 @@ def generate_elements_run(run_name, postings, df, doc_len, doc_ids, N,
     print(f"Run éléments généré: {run_path}")
     return run_path
 
+def generate_elements_run_any(run_name, method, postings, df, doc_len, doc_ids, N, queries, stopset, stemmer, stem_cache, out_dir, element_paths=None, k1=BM25_K1, b=BM25_B):
+
+    ensure_dir(out_dir)
+    run_path = os.path.join(out_dir, f"{TEAM}_{run_name}.txt")
+
+    if method == "ltn":
+        weights = compute_ltn_weights(postings, df, N)     
+    elif method == "ltc":
+        weights = compute_ltc_weights(postings, df, N)   
+    else:
+        weights = None
+
+    with open(run_path, "w", encoding="utf-8") as f:
+        for qid, qtext in queries.items():
+            q_raw = tokenize_terms(qtext)
+            q_terms = preprocess(q_raw, stopset, stemmer, stem_cache)
+
+            if method == "ltn":
+                scores = score_query_ltn(weights, q_terms)
+            elif method == "ltc":
+                scores = score_query_ltc(weights, q_terms)
+            else:
+                scores, _ = score_query_bm25(postings, df, doc_len, N, q_terms, k1=k1, b=b)
+
+            ranked = top_k_with_padding(scores, doc_ids, TOP_K)
+            for rank, (docid, score) in enumerate(ranked, 1):
+                path_in_xml = element_paths.get(docid, "/article[1]") if element_paths else "/article[1]"
+                f.write(f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} {path_in_xml}\n")
+
+    print(f"Run éléments généré: {run_path}")
+    return run_path
+
+
 def main_elements_run():
     print("\n=== Exercise 3: Indexing XML elements (bdy, sec, p) ===")
     docs_elements = load_collection_elements(DATA_DIR, tags=("bdy","sec","p"))
@@ -440,6 +474,51 @@ def main_elements_run():
         QUERIES, stopset, stemmer, stem_cache, OUTPUT_DIR,
         element_paths=element_paths
     )
+
+
+def main_elements_runs_ex4():
+    print("\n=== Exercise 4: XML elements runs (experiments) ===")
+
+    stop_full = load_stopwords(STOPFILE)
+    stop_options = [("nostop", set()), ("stop671", stop_full)]
+    stem_options = [("nostem", None), ("porter", PorterStemmer())]
+    methods = ["ltn", "ltc", "bm25"]
+
+    granularities = [
+        ("bdy","sec","p"),
+        ("sec","p"),
+        ("p",),
+        ("bdy",),
+   ]
+
+    run_id = 0
+    for tags in granularities:
+        docs_elements = load_collection_elements(DATA_DIR, tags=tags)
+        docs_elements_index = [(eid, text) for eid, text, _ in docs_elements]
+        element_paths = {eid: path for eid, _, path in docs_elements}
+
+        for stop_name, stopset in stop_options:
+            for stem_name, stemmer in stem_options:
+                stem_cache = {}
+                postings, df, doc_len, doc_ids, stem_cache, stats = build_index(
+                    docs_elements_index, stopset, stemmer
+                )
+                N = len(doc_ids)
+
+                for method in methods:
+                    run_name = (
+                        f"{run_id}_testE4_{method}_element-{'-'.join(tags)}_"
+                        f"{stop_name}_{stem_name}"
+                    )
+                    generate_elements_run_any(
+                        run_name, method,
+                        postings, df, doc_len, doc_ids, N,
+                        QUERIES, stopset, stemmer, stem_cache,
+                        OUTPUT_DIR, element_paths=element_paths,
+                        k1=BM25_K1, b=BM25_B
+                    )
+                    run_id += 1
+
 
 # =======================
 # Main : runs exercice 4 + tuning BM25 (grille 5x5)
@@ -516,6 +595,12 @@ def main():
     # Exercice 3 : runs "testXML"
     # ==========================
     main_elements_run()
+
+    # ==========================
+    # Exercice 4
+    # ==========================
+    main_elements_runs_ex4()
+
 
 if __name__ == "__main__":
     main()
