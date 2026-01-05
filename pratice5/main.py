@@ -48,6 +48,18 @@ FIELDS = {
 }
 
 # =======================
+# BM25F Fields (Exo 5 & 6)
+# =======================
+BM25F_FIELDS = {
+    "title": {"alpha": 2.0, "b": 0.75},
+    "sec":   {"alpha": 1.5, "b": 0.75},
+    "bdy":   {"alpha": 1.0, "b": 0.75},
+    "p":     {"alpha": 0.8, "b": 0.75},
+}
+
+BM25F_K1 = 1.2
+
+# =======================
 # Utilitaires
 # =======================
 def ensure_dir(path):
@@ -592,33 +604,168 @@ def generate_articles_bm25_run_variable_kb(
 
     return run_paths
 
-def main_articles_bm25_run():
-    print("\n=== Exercise 5: Articles BM25 runs ===")
+def build_article_fields_index(data_dir, stopset, stemmer):
+    postings = {f: defaultdict(lambda: defaultdict(int)) for f in BM25F_FIELDS}
+    df = defaultdict(int)
+    doc_len = {f: {} for f in BM25F_FIELDS}
+    doc_ids = []
+    stem_cache = {}
+
+    for fname in os.listdir(data_dir):
+        if not fname.endswith(".xml"):
+            continue
+
+        docid = os.path.splitext(fname)[0]
+        doc_ids.append(docid)
+
+        with open(os.path.join(data_dir, fname), "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+
+        article = soup.find("article")
+        if not article:
+            continue
+
+        fields_text = {
+            "title": article.title.get_text(" ", strip=True) if article.title else "",
+            "sec":   " ".join(s.get_text(" ", strip=True) for s in article.find_all("sec")),
+            "bdy":   " ".join(b.get_text(" ", strip=True) for b in article.find_all("bdy")),
+            "p":     " ".join(p.get_text(" ", strip=True) for p in article.find_all("p")),
+        }
+
+        seen_terms = set()
+
+        for field, text in fields_text.items():
+            tokens = preprocess(tokenize_terms(text), stopset, stemmer, stem_cache)
+            doc_len[field][docid] = len(tokens)
+            tf = Counter(tokens)
+
+            for term, freq in tf.items():
+                postings[field][term][docid] += freq
+                if term not in seen_terms:
+                    df[term] += 1
+                    seen_terms.add(term)
+
+    return postings, df, doc_len, doc_ids, stem_cache
+
+def score_query_bm25f(postings, df, doc_len, doc_ids, N,
+                      query_terms, k1=BM25F_K1):
+
+    avg_len = {
+        f: sum(doc_len[f].values()) / len(doc_len[f])
+        for f in doc_len
+    }
+
+    scores = defaultdict(float)
+
+    for t in set(query_terms):
+        df_t = df.get(t, 0)
+        if df_t == 0:
+            continue
+
+        idf = math.log((N - df_t + 0.5) / (df_t + 0.5) + 1e-12)
+
+        for d in doc_ids:
+            tf_prime = 0.0
+            for field, params in BM25F_FIELDS.items():
+                tf = postings[field].get(t, {}).get(d, 0)
+                if tf == 0:
+                    continue
+
+                b = params["b"]
+                alpha = params["alpha"]
+                norm = (1 - b) + b * (doc_len[field][d] / avg_len[field])
+                tf_prime += alpha * (tf / norm)
+
+            if tf_prime > 0:
+                scores[d] += idf * ((tf_prime * (k1 + 1)) / (tf_prime + k1))
+
+    return scores
+
+def score_query_bm25_robertson(postings, df, doc_len, doc_ids, N,
+                               query_terms, k1=1.2):
+
+    scores = defaultdict(float)
+
+    for field, params in BM25F_FIELDS.items():
+        alpha = params["alpha"]
+        b = params["b"]
+
+        field_scores, _ = score_query_bm25(
+            postings[field],
+            df,
+            doc_len[field],
+            N,
+            query_terms,
+            k1=k1,
+            b=b
+        )
+
+        for d, s in field_scores.items():
+            scores[d] += alpha * s
+
+    return scores
+
+def main_exo5_exo6():
+    print("\n=== Exercice 5 & 6: BM25F (article granularity, 4 runs chacun) ===")
 
     stopset = load_stopwords(STOPFILE)
     stemmer = PorterStemmer()
     stem_cache = {}
 
-    postings, df, doc_len, doc_ids, stem_cache, stats = build_article_index(DATA_DIR, stopset, stemmer)
+    postings, df, doc_len, doc_ids, stem_cache = build_article_fields_index(DATA_DIR, stopset, stemmer)
     N = len(doc_ids)
 
-    generate_articles_bm25_run_variable_kb(
-        run_name_prefix="test2_BM25Fw_articles",
-        postings=postings,
-        df=df,
-        doc_len=doc_len,
-        doc_ids=doc_ids,
-        N=N,
-        queries=QUERIES,
-        stopset=stopset,
-        stemmer=stemmer,
-        stem_cache=stem_cache,
-        out_dir=OUTPUT_DIR,
-        k1_values=[1.0, 1.2, 1.5],
-        b_values=[0.5, 0.75, 0.9]
-    )
+    # --- Exercice 5 : BM25Fw (Wilkinson94, late combination) ---
+    exo5_alphas = [
+        {"title": 2.0, "sec": 1.5, "bdy": 1.0, "p": 0.8},
+        {"title": 1.5, "sec": 1.2, "bdy": 1.0, "p": 1.0},
+        {"title": 3.0, "sec": 2.0, "bdy": 1.0, "p": 0.9},
+        {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 1.0},
+    ]
+    k1_values = [1.0, 1.2, 1.5, 1.0]
+    b_values  = [0.75, 0.75, 0.9, 0.5]
 
-    print("=== FIN EXERCICE 5 ===")
+    run_id = 100
+    for i in range(4):
+        for field, alpha in exo5_alphas[i].items():
+            BM25F_FIELDS[field]["alpha"] = alpha  # mise à jour des α
+
+        run_name = f"{run_id}_BM25Fw_k{k1_values[i]}_b{b_values[i]}"
+        scores = score_query_bm25f(
+            postings, df, doc_len, doc_ids, N,
+            query_terms=[t for q in QUERIES.values() for t in tokenize_terms(q)],
+            k1=k1_values[i]
+        )
+
+        path = os.path.join(OUTPUT_DIR, f"{TEAM}_{run_name}.txt")
+        ensure_dir(OUTPUT_DIR)
+        with open(path, "w", encoding="utf-8") as f:
+            for qid, qtext in QUERIES.items():
+                q_terms = preprocess(tokenize_terms(qtext), stopset, stemmer, stem_cache)
+                scores = score_query_bm25f(postings, df, doc_len, doc_ids, N, q_terms, k1=k1_values[i])
+                ranked = top_k_with_padding(scores, doc_ids, TOP_K)
+                for rank, (docid, score) in enumerate(ranked, 1):
+                    f.write(f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} /article[1]\n")
+        print(f"Run Exo5 généré : {path}")
+        run_id += 1
+
+    # --- Exercice 6 : BM25FR (Robertson94, early combination) ---
+    k1_values = [1.2, 1.0, 1.5, 1.0]
+    b_values  = [0.75, 0.75, 0.9, 0.5]  # juste pour info (on peut ne pas l'utiliser directement)
+
+    for i in range(4):
+        run_name = f"{run_id}_BM25FR_k{k1_values[i]}_b{b_values[i]}"
+        path = os.path.join(OUTPUT_DIR, f"{TEAM}_{run_name}.txt")
+        ensure_dir(OUTPUT_DIR)
+        with open(path, "w", encoding="utf-8") as f:
+            for qid, qtext in QUERIES.items():
+                q_terms = preprocess(tokenize_terms(qtext), stopset, stemmer, stem_cache)
+                scores = score_query_bm25_robertson(postings, df, doc_len, doc_ids, N, q_terms, k1=k1_values[i])
+                ranked = top_k_with_padding(scores, doc_ids, TOP_K)
+                for rank, (docid, score) in enumerate(ranked, 1):
+                    f.write(f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} /article[1]\n")
+        print(f"Run Exo6 généré : {path}")
+        run_id += 1
 
 # =======================
 # Main : runs exercice 4 + tuning BM25 (grille 5x5)
@@ -702,9 +849,9 @@ def main():
     main_elements_runs_ex4()
 
     # ==========================
-    # Exercice 5
+    # Exercice 5 & 6 (BM25F)
     # ==========================
-    main_articles_bm25_run()
+    main_exo5_exo6()
 
 if __name__ == "__main__":
     main()
