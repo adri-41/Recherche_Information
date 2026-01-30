@@ -162,6 +162,7 @@ def score_query(query, postings, df, doc_len, N, method="tfidf", avg_dl=None, k=
 # =======================
 def main():
     ensure_dir(OUTPUT_DIR)
+
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
         f.write(f"Practice 6 – INEX\nTeam: {TEAM}\nVersion: v1\n\n")
 
@@ -169,6 +170,7 @@ def main():
     stop_full = load_stopwords(STOPFILE)
     N = len(docs)
 
+    # Configurations stop/stem
     configs = [
         ("nostop", "nostem", set(), None),
         ("stop671", "nostem", stop_full, None),
@@ -176,39 +178,81 @@ def main():
         ("stop671", "porter", stop_full, PorterStemmer()),
     ]
 
+    # Méthodes de scoring
     methods = ["tfidf", "lnu", "bm25"]
+
+    # Paramètres BM25 supplémentaires
+    bm25_tuning = [
+        (1.2, 0.75),  # valeur par défaut
+        (0.2, 0.25),  # tuning demandé
+    ]
 
     stats_written = False
 
     for stop_name, stem_name, stopset, stemmer in configs:
+        print(f"\n--- Run stop={stop_name}, stem={stem_name} ---")
         postings, df, doc_len, stats = build_index(docs, stopset, stemmer)
-        avg_dl = sum(doc_len.values()) / N  # moyenne longueur doc
+        avg_dl = sum(doc_len.values()) / N  # moyenne longueur doc pour BM25/lnu
 
+        # -----------------------
+        # Affichage et report stats (une seule fois)
+        # -----------------------
         if not stats_written:
-            write_report("=== Stats clés (nostop / nostem) ===")
+            write_report("=== Stats clés (tous runs) ===")
+            print("\n=== Stats clés (tous runs) ===")
             for k, v in stats.items():
-                write_report(f"{k}: {v}")
+                line = f"{k}: {v}"
+                print(line)
+                write_report(line)
             stats_written = True
 
+        # -----------------------
+        # Génération des runs
+        # -----------------------
         for method in methods:
-            run_name = f"run_articles_{stop_name}_{stem_name}_{method}.txt"
-            run_path = os.path.join(OUTPUT_DIR, run_name)
+            if method == "bm25":
+                # Pour BM25, on fait tous les tunings
+                for k_val, b_val in bm25_tuning:
+                    run_name = f"run_articles_{stop_name}_{stem_name}_{method}_k{k_val}_b{b_val}.txt"
+                    run_path = os.path.join(OUTPUT_DIR, run_name)
 
-            with open(run_path, "w", encoding="utf-8") as f:
-                for qid, query in QUERIES.items():
-                    scores = score_query(query, postings, df, doc_len, N, method=method, avg_dl=avg_dl)
-                    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
-                    for rank, (docid, score) in enumerate(ranked, 1):
-                        f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                    with open(run_path, "w", encoding="utf-8") as f:
+                        for qid, query in QUERIES.items():
+                            scores = score_query(query, postings, df, doc_len, N,
+                                                 method=method, avg_dl=avg_dl, k=k_val, b=b_val)
+                            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                            for rank, (docid, score) in enumerate(ranked, 1):
+                                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
 
-            print(f"[RUN OK] {run_name}")
-            write_report(f"Run generated: {run_name}")
+                    print(f"[RUN OK] {run_name}")
+                    write_report(f"Run generated: {run_name}")
+            else:
+                # tfidf ou lnu
+                run_name = f"run_articles_{stop_name}_{stem_name}_{method}.txt"
+                run_path = os.path.join(OUTPUT_DIR, run_name)
 
-    # ZIP sans main.py
+                with open(run_path, "w", encoding="utf-8") as f:
+                    for qid, query in QUERIES.items():
+                        scores = score_query(query, postings, df, doc_len, N,
+                                             method=method, avg_dl=avg_dl)
+                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                        for rank, (docid, score) in enumerate(ranked, 1):
+                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+
+                print(f"[RUN OK] {run_name}")
+                write_report(f"Run generated: {run_name}")
+
+    # -----------------------
+    # Création archive ZIP
+    # -----------------------
     with zipfile.ZipFile(ZIP_NAME, "w", zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(REPORT_PATH)
         for f in os.listdir(OUTPUT_DIR):
             zipf.write(os.path.join(OUTPUT_DIR, f))
+        # ajoute d'autres .py si besoin sauf main.py
+        for f in os.listdir("."):
+            if f.endswith(".py") and f != os.path.basename(__file__):
+                zipf.write(f)
 
     print(f"\nArchive créée : {ZIP_NAME}")
 

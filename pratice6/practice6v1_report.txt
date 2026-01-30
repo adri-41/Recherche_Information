@@ -1,0 +1,28 @@
+Practice 6 – INEX
+Team: AdrienSoleneWilliam
+Version: v1
+
+=== Stats clés (tous runs) ===
+total_tokens: 10933589
+distinct_tokens: 259344
+avg_token_len: 7.598733728175705
+total_terms: 10933589
+distinct_terms: 208494
+avg_doc_len: 1115.21715626275
+avg_term_len: 7.709823783897858
+Run generated: run_articles_nostop_nostem_tfidf.txt
+Run generated: run_articles_nostop_nostem_lnu.txt
+Run generated: run_articles_nostop_nostem_bm25_k1.2_b0.75.txt
+Run generated: run_articles_nostop_nostem_bm25_k0.2_b0.25.txt
+Run generated: run_articles_stop671_nostem_tfidf.txt
+Run generated: run_articles_stop671_nostem_lnu.txt
+Run generated: run_articles_stop671_nostem_bm25_k1.2_b0.75.txt
+Run generated: run_articles_stop671_nostem_bm25_k0.2_b0.25.txt
+Run generated: run_articles_nostop_porter_tfidf.txt
+Run generated: run_articles_nostop_porter_lnu.txt
+Run generated: run_articles_nostop_porter_bm25_k1.2_b0.75.txt
+Run generated: run_articles_nostop_porter_bm25_k0.2_b0.25.txt
+Run generated: run_articles_stop671_porter_tfidf.txt
+Run generated: run_articles_stop671_porter_lnu.txt
+Run generated: run_articles_stop671_porter_bm25_k1.2_b0.75.txt
+Run generated: run_articles_stop671_porter_bm25_k0.2_b0.25.txt
