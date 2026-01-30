@@ -158,19 +158,102 @@ def score_query(query, postings, df, doc_len, N, method="tfidf", avg_dl=None, k=
     return scores
 
 # =======================
+# Extraire elements
+# =======================
+from bs4 import BeautifulSoup
+import os
+
+# -----------------------------
+# Elements (tous les enfants d'article)
+# -----------------------------
+def load_collection_elements(root_dir):
+    """
+    Retourne une liste (docid, texte) pour chaque "element" dans les articles.
+    Ici, on considère que chaque élément direct de <article> est un "element".
+    """
+    docs = []
+    for fname in os.listdir(root_dir):
+        if not fname.endswith(".xml"):
+            continue
+        path = os.path.join(root_dir, fname)
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+        article = soup.find("article")
+        if article:
+            # chaque enfant direct de <article> est un élément
+            for i, elem in enumerate(article.find_all(recursive=False)):
+                text = elem.get_text(" ", strip=True)
+                if text:
+                    docid = f"{os.path.splitext(fname)[0]}_elem{i+1}"
+                    docs.append((docid, text))
+    return docs
+
+
+# -----------------------------
+# Sections (<section> dans les articles)
+# -----------------------------
+def load_collection_sections(root_dir):
+    """
+    Retourne une liste (docid, texte) pour chaque <section> dans les articles.
+    """
+    docs = []
+    for fname in os.listdir(root_dir):
+        if not fname.endswith(".xml"):
+            continue
+        path = os.path.join(root_dir, fname)
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+        article = soup.find("article")
+        if article:
+            sections = article.find_all("section")
+            for i, sec in enumerate(sections):
+                text = sec.get_text(" ", strip=True)
+                if text:
+                    docid = f"{os.path.splitext(fname)[0]}_sec{i+1}"
+                    docs.append((docid, text))
+    return docs
+
+
+# -----------------------------
+# Paragraphes (<p> dans les articles)
+# -----------------------------
+def load_collection_paragraphs(root_dir):
+    """
+    Retourne une liste (docid, texte) pour chaque <p> dans les articles.
+    """
+    docs = []
+    for fname in os.listdir(root_dir):
+        if not fname.endswith(".xml"):
+            continue
+        path = os.path.join(root_dir, fname)
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+        article = soup.find("article")
+        if article:
+            paragraphs = article.find_all("p")
+            for i, p in enumerate(paragraphs):
+                text = p.get_text(" ", strip=True)
+                if text:
+                    docid = f"{os.path.splitext(fname)[0]}_p{i+1}"
+                    docs.append((docid, text))
+    return docs
+
+# =======================
 # MAIN
 # =======================
 def main():
     ensure_dir(OUTPUT_DIR)
-
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
         f.write(f"Practice 6 – INEX\nTeam: {TEAM}\nVersion: v1\n\n")
 
-    docs = load_collection_xml(DATA_DIR)
+    # ==========================
+    # EXERCISE 1: Articles
+    # ==========================
+    print("=== Exercise 1: XML Articles ===")
+    docs_articles = load_collection_xml(DATA_DIR)
     stop_full = load_stopwords(STOPFILE)
-    N = len(docs)
+    N_articles = len(docs_articles)
 
-    # Configurations stop/stem
     configs = [
         ("nostop", "nostem", set(), None),
         ("stop671", "nostem", stop_full, None),
@@ -178,63 +261,64 @@ def main():
         ("stop671", "porter", stop_full, PorterStemmer()),
     ]
 
-    # Méthodes de scoring
     methods = ["tfidf", "lnu", "bm25"]
-
-    # Paramètres BM25 supplémentaires
-    bm25_tuning = [
-        (1.2, 0.75),  # valeur par défaut
-        (0.2, 0.25),  # tuning demandé
-    ]
-
-    stats_written = False
+    stats_written_articles = False
 
     for stop_name, stem_name, stopset, stemmer in configs:
-        print(f"\n--- Run stop={stop_name}, stem={stem_name} ---")
-        postings, df, doc_len, stats = build_index(docs, stopset, stemmer)
-        avg_dl = sum(doc_len.values()) / N  # moyenne longueur doc pour BM25/lnu
+        postings, df, doc_len, stats = build_index(docs_articles, stopset, stemmer)
+        avg_dl = sum(doc_len.values()) / N_articles
 
-        # -----------------------
-        # Affichage et report stats (une seule fois)
-        # -----------------------
-        if not stats_written:
-            write_report("=== Stats clés (tous runs) ===")
-            print("\n=== Stats clés (tous runs) ===")
+        if not stats_written_articles:
+            write_report("=== Stats clés Articles ===")
             for k, v in stats.items():
-                line = f"{k}: {v}"
-                print(line)
-                write_report(line)
-            stats_written = True
+                write_report(f"{k}: {v}")
+            stats_written_articles = True
 
-        # -----------------------
-        # Génération des runs
-        # -----------------------
         for method in methods:
-            if method == "bm25":
-                # Pour BM25, on fait tous les tunings
-                for k_val, b_val in bm25_tuning:
-                    run_name = f"run_articles_{stop_name}_{stem_name}_{method}_k{k_val}_b{b_val}.txt"
-                    run_path = os.path.join(OUTPUT_DIR, run_name)
+            run_name = f"run_articles_{stop_name}_{stem_name}_{method}.txt"
+            run_path = os.path.join(OUTPUT_DIR, run_name)
 
-                    with open(run_path, "w", encoding="utf-8") as f:
-                        for qid, query in QUERIES.items():
-                            scores = score_query(query, postings, df, doc_len, N,
-                                                 method=method, avg_dl=avg_dl, k=k_val, b=b_val)
-                            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
-                            for rank, (docid, score) in enumerate(ranked, 1):
-                                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+            with open(run_path, "w", encoding="utf-8") as f:
+                for qid, query in QUERIES.items():
+                    scores = score_query(query, postings, df, doc_len, N_articles, method=method, avg_dl=avg_dl)
+                    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                    for rank, (docid, score) in enumerate(ranked, 1):
+                        f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
 
-                    print(f"[RUN OK] {run_name}")
-                    write_report(f"Run generated: {run_name}")
-            else:
-                # tfidf ou lnu
-                run_name = f"run_articles_{stop_name}_{stem_name}_{method}.txt"
+            print(f"[RUN OK] {run_name}")
+            write_report(f"Run generated: {run_name}")
+
+    # ==========================
+    # EXERCISE 2: Elements
+    # ==========================
+    print("\n=== Exercise 2: XML Elements ===")
+    docs_elements = load_collection_elements(DATA_DIR)  # À créer
+    N_elements = len(docs_elements)
+    stats_written_elements = False
+
+    for stop_name, stem_name, stopset, stemmer in configs:
+        postings, df, doc_len, stats = build_index(docs_elements, stopset, stemmer)
+        avg_dl = sum(doc_len.values()) / N_elements
+
+        if not stats_written_elements:
+            write_report("=== Stats clés Elements ===")
+            for k, v in stats.items():
+                write_report(f"{k}: {v}")
+            stats_written_elements = True
+
+        for method in methods:
+            # Runs BM25 avec tuning
+            bm25_params = [(1.2, 0.75), (0.2, 0.25)] if method=="bm25" else [(None, None)]
+            for k_val, b_val in bm25_params:
+                run_name = f"run_elements_{stop_name}_{stem_name}_{method}"
+                if method=="bm25":
+                    run_name += f"_k{k_val}_b{b_val}"
+                run_name += ".txt"
                 run_path = os.path.join(OUTPUT_DIR, run_name)
 
                 with open(run_path, "w", encoding="utf-8") as f:
                     for qid, query in QUERIES.items():
-                        scores = score_query(query, postings, df, doc_len, N,
-                                             method=method, avg_dl=avg_dl)
+                        scores = score_query(query, postings, df, doc_len, N_elements, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
                         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
                         for rank, (docid, score) in enumerate(ranked, 1):
                             f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
@@ -242,17 +326,87 @@ def main():
                 print(f"[RUN OK] {run_name}")
                 write_report(f"Run generated: {run_name}")
 
-    # -----------------------
-    # Création archive ZIP
-    # -----------------------
+    # ==========================
+    # EXERCISE 2: Sections
+    # ==========================
+    print("\n=== Exercise 2: Sections ===")
+    docs_sections = load_collection_sections(DATA_DIR)  # À créer
+    N_sections = len(docs_sections)
+    stats_written_sections = False
+
+    for stop_name, stem_name, stopset, stemmer in configs:
+        postings, df, doc_len, stats = build_index(docs_sections, stopset, stemmer)
+        avg_dl = sum(doc_len.values()) / N_sections
+
+        if not stats_written_sections:
+            write_report("=== Stats clés Sections ===")
+            for k, v in stats.items():
+                write_report(f"{k}: {v}")
+            stats_written_sections = True
+
+        for method in methods:
+            bm25_params = [(1.2, 0.75), (0.2, 0.25)] if method=="bm25" else [(None, None)]
+            for k_val, b_val in bm25_params:
+                run_name = f"run_sections_{stop_name}_{stem_name}_{method}"
+                if method=="bm25":
+                    run_name += f"_k{k_val}_b{b_val}"
+                run_name += ".txt"
+                run_path = os.path.join(OUTPUT_DIR, run_name)
+
+                with open(run_path, "w", encoding="utf-8") as f:
+                    for qid, query in QUERIES.items():
+                        scores = score_query(query, postings, df, doc_len, N_sections, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
+                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                        for rank, (docid, score) in enumerate(ranked, 1):
+                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+
+                print(f"[RUN OK] {run_name}")
+                write_report(f"Run generated: {run_name}")
+
+    # ==========================
+    # EXERCISE 2: Paragraphs
+    # ==========================
+    print("\n=== Exercise 2: Paragraphs ===")
+    docs_paragraphs = load_collection_paragraphs(DATA_DIR)  # À créer
+    N_paragraphs = len(docs_paragraphs)
+    stats_written_paragraphs = False
+
+    for stop_name, stem_name, stopset, stemmer in configs:
+        postings, df, doc_len, stats = build_index(docs_paragraphs, stopset, stemmer)
+        avg_dl = sum(doc_len.values()) / N_paragraphs
+
+        if not stats_written_paragraphs:
+            write_report("=== Stats clés Paragraphs ===")
+            for k, v in stats.items():
+                write_report(f"{k}: {v}")
+            stats_written_paragraphs = True
+
+        for method in methods:
+            bm25_params = [(1.2, 0.75), (0.2, 0.25)] if method=="bm25" else [(None, None)]
+            for k_val, b_val in bm25_params:
+                run_name = f"run_paragraphs_{stop_name}_{stem_name}_{method}"
+                if method=="bm25":
+                    run_name += f"_k{k_val}_b{b_val}"
+                run_name += ".txt"
+                run_path = os.path.join(OUTPUT_DIR, run_name)
+
+                with open(run_path, "w", encoding="utf-8") as f:
+                    for qid, query in QUERIES.items():
+                        scores = score_query(query, postings, df, doc_len, N_paragraphs, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
+                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                        for rank, (docid, score) in enumerate(ranked, 1):
+                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+
+                print(f"[RUN OK] {run_name}")
+                write_report(f"Run generated: {run_name}")
+
+    # ==========================
+    # ZIP
+    # ==========================
     with zipfile.ZipFile(ZIP_NAME, "w", zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(REPORT_PATH)
         for f in os.listdir(OUTPUT_DIR):
             zipf.write(os.path.join(OUTPUT_DIR, f))
-        # ajoute d'autres .py si besoin sauf main.py
-        for f in os.listdir("."):
-            if f.endswith(".py") and f != os.path.basename(__file__):
-                zipf.write(f)
 
     print(f"\nArchive créée : {ZIP_NAME}")
 
