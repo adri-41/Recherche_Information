@@ -6,7 +6,6 @@ import zipfile
 from bs4 import BeautifulSoup
 from lxml import etree
 from collections import defaultdict, Counter
-
 from nltk.stem import PorterStemmer, SnowballStemmer, LancasterStemmer
 
 
@@ -35,9 +34,13 @@ TOP_K = 1500
 BM25_K1 = 1.2
 BM25_B = 0.75
 
+# Best BM25 parameters (from Practice 5)
+BEST_K1 = 0.2
+BEST_B  = 0.25
+
 # Deux regex distinctes : tokens (pour stats, casse conservée) et terms (pour indexation, minuscules)
-TOKEN_RE = re.compile(r"[A-Za-z]+") 
-TERM_RE = re.compile(r"[a-z]+")  
+TOKEN_RE = re.compile(r"[A-Za-z]+")
+TERM_RE = re.compile(r"[a-z]+")
 TAG_RE = re.compile(r"<[^>]+>")
 
 FIELDS = {
@@ -55,6 +58,20 @@ BM25F_FIELDS = {
     "sec":   {"alpha": 1.5, "b": 0.75},
     "bdy":   {"alpha": 1.0, "b": 0.75},
     "p":     {"alpha": 0.8, "b": 0.75},
+}
+
+BM25F_FIELDS_BASELINE = {
+    "title": {"alpha": 1.0, "b": BEST_B},
+    "sec":   {"alpha": 1.0, "b": BEST_B},
+    "bdy":   {"alpha": 1.0, "b": BEST_B},
+    "p":     {"alpha": 1.0, "b": BEST_B},
+}
+
+BM25F_FIELDS_WEIGHTED = {
+    "title": {"alpha": 2.0, "b": BEST_B},
+    "sec":   {"alpha": 1.5, "b": BEST_B},
+    "bdy":   {"alpha": 1.0, "b": BEST_B},
+    "p":     {"alpha": 0.8, "b": BEST_B},
 }
 
 BM25F_K1 = 1.2
@@ -91,36 +108,90 @@ def load_collection_xml(root_dir):
     for fname in os.listdir(root_dir):
         if not fname.lower().endswith(".xml"):
             continue
+
         path = os.path.join(root_dir, fname)
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read()
+            soup = BeautifulSoup(f.read(), "xml")
 
-        soup = BeautifulSoup(raw, "xml")
-        text = soup.get_text(" ", strip=False)  # texte sans balises (et plus propre côté XML)
+        article = soup.find("article")
+        if not article:
+            continue
 
+        text = article.get_text(" ", strip=True)
         docid = os.path.splitext(fname)[0]
         docs.append((docid, text))
 
-    if "<" in text or ">" in text:
-        print("not good")
-    else:
-        print("all good") 
     return docs
 
- 
 # =======================
 # Tokenisation / Preprocessing
 # =======================
 def tokenize_tokens(text):
     """Tokenisation pour stats : respecte la casse (A-Za-z)."""
-    return TOKEN_RE.findall(text)
-
+    return re.findall(r"[A-Za-zÀ-ÿ]+", text)
 
 def tokenize_terms(text):
     """Tokenisation pour termes (indexation/requêtes) : minuscules uniquement."""
-    return [t.lower() for t in TOKEN_RE.findall(text)]
+    return [t.lower() for t in re.findall(r"[A-Za-zÀ-ÿ]+", text)]
 
+# -------------------------------
+# Extraction texte XML
+# -------------------------------
+def extract_articles_text(root_dir):
+    docs = []
+    for fname in os.listdir(root_dir):
+        if not fname.lower().endswith(".xml"):
+            continue
+        path = os.path.join(root_dir, fname)
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+        article = soup.find("article")
+        if not article:
+            continue
+        text = article.get_text(" ", strip=True)
+        docid = os.path.splitext(fname)[0]
+        docs.append((docid, text))
+    return docs
 
+# -------------------------------
+# Calcul stats
+# -------------------------------
+def compute_stats(docs):
+    total_tokens = 0
+    total_token_chars = 0
+    distinct_tokens = set()
+
+    total_terms = 0
+    total_term_chars = 0
+    distinct_terms = set()
+
+    doc_lens = []
+
+    for docid, text in docs:
+        # 🔹 TOKENS = pour stats (casse conservée, accents conservés)
+        tokens = tokenize_tokens(text)
+        total_tokens += len(tokens)
+        total_token_chars += sum(len(t) for t in tokens)
+        distinct_tokens.update(tokens)
+
+        # 🔹 TERMS = pour indexation (minuscules)
+        terms = tokenize_terms(text)
+        total_terms += len(terms)
+        total_term_chars += sum(len(t) for t in terms)
+        distinct_terms.update(terms)
+
+        doc_lens.append(len(terms))
+
+    return {
+        "total_tokens": total_tokens,
+        "distinct_tokens": len(distinct_tokens),
+        "avg_token_len": total_token_chars / total_tokens if total_tokens else 0,
+
+        "total_terms": total_terms,
+        "distinct_terms": len(distinct_terms),
+        "avg_doc_len": sum(doc_lens) / len(doc_lens) if doc_lens else 0,
+        "avg_term_len": total_term_chars / total_terms if total_terms else 0,
+    }
 
 def preprocess(tokens, stopset, stemmer, cache):
     """Supprime stopwords et applique stemming via stemmer (utilise cache)."""
@@ -140,63 +211,55 @@ def preprocess(tokens, stopset, stemmer, cache):
 # =======================
 # Construction de l’index (corrigée pour tokens vs terms)
 # =======================
+from collections import defaultdict, Counter
+
 def build_index(docs, stopset, stemmer):
-    """
-    Construit postings, df, doc_len, doc_ids, stem_cache et stats.
-    Stats distinctes pour tokens (casse) et terms (minuscules/stemmés).
-    """
     postings = defaultdict(lambda: defaultdict(int))
     df = defaultdict(int)
     doc_len = {}
     doc_ids = []
     stem_cache = {}
 
-    # stats tokens
     total_tokens = 0
-    total_token_chars = 0
     distinct_tokens = set()
-
-    # stats terms
     total_terms = 0
-    total_term_chars = 0
     distinct_terms = set()
 
     for docid, content in docs:
         doc_ids.append(docid)
 
-        # tokens pour stats (respect de la casse)
+        # Tokens pour stats
         tokens = tokenize_tokens(content)
         total_tokens += len(tokens)
-        total_token_chars += sum(len(t) for t in tokens)
         distinct_tokens.update(tokens)
 
-        # terms pour index (minuscules) puis preprocess (stop/stem)
-        raw_terms = tokenize_terms(content)  # already lowercased
+        # Terms pour indexation
+        raw_terms = tokenize_terms(content)
         terms = preprocess(raw_terms, stopset, stemmer, stem_cache)
 
         doc_len[docid] = len(terms)
         total_terms += len(terms)
-        total_term_chars += sum(len(t) for t in terms)
         distinct_terms.update(terms)
 
-        # construire postings & df
+        # Index
         tf = Counter(terms)
         for term, freq in tf.items():
             postings[term][docid] = freq
             df[term] += 1
 
+    # Stats finales
     stats = {
         "total_tokens": total_tokens,
         "distinct_tokens": len(distinct_tokens),
-        "avg_token_len": (total_token_chars / total_tokens) if total_tokens else 0,
+        "avg_token_len": sum(len(t) for t in distinct_tokens) / len(distinct_tokens) if distinct_tokens else 0,
+
         "total_terms": total_terms,
         "distinct_terms": len(distinct_terms),
-        "avg_doc_len": (total_terms / len(doc_ids)) if doc_ids else 0,
-        "avg_term_len": (total_term_chars / total_terms) if total_terms else 0,
+        "avg_doc_len": total_terms / len(doc_ids) if doc_ids else 0,
+        "avg_term_len": sum(len(t) for t in distinct_terms) / len(distinct_terms) if distinct_terms else 0,
     }
 
     return postings, df, doc_len, doc_ids, stem_cache, stats
-
 
 # =======================
 # LTN / LTC weights
@@ -437,9 +500,9 @@ def generate_elements_run_any(run_name, method, postings, df, doc_len, doc_ids, 
     run_path = os.path.join(out_dir, f"{TEAM}_{run_name}.txt")
 
     if method == "ltn":
-        weights = compute_ltn_weights(postings, df, N)     
+        weights = compute_ltn_weights(postings, df, N)
     elif method == "ltc":
-        weights = compute_ltc_weights(postings, df, N)   
+        weights = compute_ltc_weights(postings, df, N)
     else:
         weights = None
 
@@ -681,12 +744,13 @@ def score_query_bm25f(postings, df, doc_len, doc_ids, N,
 
     return scores
 
-def score_query_bm25_robertson(postings, df, doc_len, doc_ids, N,
-                               query_terms, k1=1.2):
-
+def score_query_bm25_robertson(
+    postings, df, doc_len, doc_ids, N,
+    query_terms, k1, fields
+):
     scores = defaultdict(float)
 
-    for field, params in BM25F_FIELDS.items():
+    for field, params in fields.items():
         alpha = params["alpha"]
         b = params["b"]
 
@@ -705,65 +769,193 @@ def score_query_bm25_robertson(postings, df, doc_len, doc_ids, N,
 
     return scores
 
-def main_exo5_exo6():
-    print("\n=== Exercice 5 & 6: BM25F (article granularity, 4 runs chacun) ===")
+BM25FR_ALPHA_CONFIGS = [
+    # 1️⃣ Baseline
+    {
+        "title": 1.0,
+        "sec":   1.0,
+        "bdy":   1.0,
+        "p":     1.0,
+    },
 
-    stopset = load_stopwords(STOPFILE)
-    stemmer = PorterStemmer()
+    # 2️⃣–4️⃣ Importance du titre
+    {
+        "title": 2.0, "sec": 1.0, "bdy": 1.0, "p": 1.0,
+    },
+    {
+        "title": 3.0, "sec": 1.0, "bdy": 1.0, "p": 1.0,
+    },
+    {
+        "title": 4.0, "sec": 1.0, "bdy": 1.0, "p": 1.0,
+    },
+
+    # 5️⃣–6️⃣ Section + titre
+    {
+        "title": 2.0, "sec": 1.5, "bdy": 1.0, "p": 1.0,
+    },
+    {
+        "title": 3.0, "sec": 2.0, "bdy": 1.0, "p": 1.0,
+    },
+
+    # 7️⃣–8️⃣ Corps dominant
+    {
+        "title": 1.0, "sec": 1.0, "bdy": 2.0, "p": 1.0,
+    },
+    {
+        "title": 1.0, "sec": 1.0, "bdy": 3.0, "p": 1.0,
+    },
+
+    # 9️⃣–10️⃣ Paragraphes dominants
+    {
+        "title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 2.0,
+    },
+    {
+        "title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 3.0,
+    },
+
+    # 1️⃣1️⃣–1️⃣2️⃣ Configuration “équilibrée”
+    {
+        "title": 2.0, "sec": 1.5, "bdy": 1.2, "p": 1.0,
+    },
+    {
+        "title": 2.5, "sec": 2.0, "bdy": 1.5, "p": 1.0,
+    },
+]
+
+def main_exo5_exo6():
+    import os
+
+    global run_id
+    run_id = 100
+    # =========================
+    # Paramètres communs
+    # =========================
+    k1 = 0.2
+    b = 0.25
+
+    stopset = set()
+    stemmer = None
     stem_cache = {}
 
-    postings, df, doc_len, doc_ids, stem_cache = build_article_fields_index(DATA_DIR, stopset, stemmer)
+    postings, df, doc_len, doc_ids, stem_cache = build_article_fields_index(
+        DATA_DIR, stopset, stemmer
+    )
     N = len(doc_ids)
 
-    # --- Exercice 5 : BM25Fw (Wilkinson94, late combination) ---
-    exo5_alphas = [
-        {"title": 2.0, "sec": 1.5, "bdy": 1.0, "p": 0.8},
-        {"title": 1.5, "sec": 1.2, "bdy": 1.0, "p": 1.0},
-        {"title": 3.0, "sec": 2.0, "bdy": 1.0, "p": 0.9},
-        {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 1.0},
+    # ======================================================
+    # Exercice 5 : BM25Fw (Wilkinson94) — late combination
+    # ======================================================
+    print("\n=== Exercice 5: BM25Fw (Wilkinson94) ===")
+
+    BM25FW_CONFIGS = [
+        ("baseline", {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 1.0}),
+        ("title2", {"title": 2.0, "sec": 1.0, "bdy": 1.0, "p": 1.0}),
+        ("title3", {"title": 3.0, "sec": 1.0, "bdy": 1.0, "p": 1.0}),
+        ("title4", {"title": 4.0, "sec": 1.0, "bdy": 1.0, "p": 1.0}),
+        ("title_sec2", {"title": 2.0, "sec": 1.5, "bdy": 1.0, "p": 1.0}),
+        ("title_sec3", {"title": 3.0, "sec": 2.0, "bdy": 1.0, "p": 1.0}),
+        ("body2", {"title": 1.0, "sec": 1.0, "bdy": 2.0, "p": 1.0}),
+        ("body3", {"title": 1.0, "sec": 1.0, "bdy": 3.0, "p": 1.0}),
+        ("para2", {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 2.0}),
+        ("para3", {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 3.0}),
     ]
-    k1_values = [1.0, 1.2, 1.5, 1.0]
-    b_values  = [0.75, 0.75, 0.9, 0.5]
 
-    run_id = 100
-    for i in range(4):
-        for field, alpha in exo5_alphas[i].items():
-            BM25F_FIELDS[field]["alpha"] = alpha  # mise à jour des α
+    for label, weights in BM25FW_CONFIGS:
 
-        run_name = f"{run_id}_BM25Fw_k{k1_values[i]}_b{b_values[i]}"
-        scores = score_query_bm25f(
-            postings, df, doc_len, doc_ids, N,
-            query_terms=[t for q in QUERIES.values() for t in tokenize_terms(q)],
-            k1=k1_values[i]
-        )
-
+        run_name = f"{run_id}_BM25Fw_k{k1}_b{b}_{label}"
         path = os.path.join(OUTPUT_DIR, f"{TEAM}_{run_name}.txt")
-        ensure_dir(OUTPUT_DIR)
+
         with open(path, "w", encoding="utf-8") as f:
             for qid, qtext in QUERIES.items():
-                q_terms = preprocess(tokenize_terms(qtext), stopset, stemmer, stem_cache)
-                scores = score_query_bm25f(postings, df, doc_len, doc_ids, N, q_terms, k1=k1_values[i])
+                q_terms = tokenize_terms(qtext)
+
+                scores = score_query_bm25f(
+                    postings,
+                    df,
+                    doc_len,
+                    doc_ids,
+                    N,
+                    q_terms,
+                    k1=k1  # BM25F n’utilise pas b par champ, donc juste k1
+                )
+
                 ranked = top_k_with_padding(scores, doc_ids, TOP_K)
                 for rank, (docid, score) in enumerate(ranked, 1):
-                    f.write(f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} /article[1]\n")
+                    f.write(
+                        f"{qid} Q0 {docid} {rank} {score:.5f} "
+                        f"{TEAM} /article[1]\n"
+                    )
+
         print(f"Run Exo5 généré : {path}")
         run_id += 1
 
-    # --- Exercice 6 : BM25FR (Robertson94, early combination) ---
-    k1_values = [1.2, 1.0, 1.5, 1.0]
-    b_values  = [0.75, 0.75, 0.9, 0.5]  # juste pour info (on peut ne pas l'utiliser directement)
+    # ======================================================
+    # Exercice 6 : BM25FR (Robertson94) — early combination
+    # ======================================================
+    print("\n=== Exercice 6: BM25FR (Robertson94) ===")
 
-    for i in range(4):
-        run_name = f"{run_id}_BM25FR_k{k1_values[i]}_b{b_values[i]}"
+    BM25FR_ALPHA_CONFIGS = [
+        # Baseline
+        {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 1.0},
+
+        # Title dominant
+        {"title": 2.0, "sec": 1.0, "bdy": 1.0, "p": 1.0},
+        {"title": 3.0, "sec": 1.0, "bdy": 1.0, "p": 1.0},
+        {"title": 4.0, "sec": 1.0, "bdy": 1.0, "p": 1.0},
+
+        # Title + section
+        {"title": 2.0, "sec": 1.5, "bdy": 1.0, "p": 1.0},
+        {"title": 3.0, "sec": 2.0, "bdy": 1.0, "p": 1.0},
+
+        # Body dominant
+        {"title": 1.0, "sec": 1.0, "bdy": 2.0, "p": 1.0},
+        {"title": 1.0, "sec": 1.0, "bdy": 3.0, "p": 1.0},
+
+        # Paragraph dominant
+        {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 2.0},
+        {"title": 1.0, "sec": 1.0, "bdy": 1.0, "p": 3.0},
+
+        # Balanced
+        {"title": 2.0, "sec": 1.5, "bdy": 1.2, "p": 1.0},
+        {"title": 2.5, "sec": 2.0, "bdy": 1.5, "p": 1.0},
+    ]
+
+    for alpha_cfg in BM25FR_ALPHA_CONFIGS:
+
+        field_cfg = {
+            f: {"alpha": alpha_cfg[f], "b": b}
+            for f in alpha_cfg
+        }
+
+        alpha_str = "_".join(
+            f"{f}{alpha_cfg[f]}" for f in alpha_cfg
+        )
+
+        run_name = f"{run_id}_BM25FR_k{k1}_b{b}_alpha_{alpha_str}"
         path = os.path.join(OUTPUT_DIR, f"{TEAM}_{run_name}.txt")
-        ensure_dir(OUTPUT_DIR)
+
         with open(path, "w", encoding="utf-8") as f:
             for qid, qtext in QUERIES.items():
-                q_terms = preprocess(tokenize_terms(qtext), stopset, stemmer, stem_cache)
-                scores = score_query_bm25_robertson(postings, df, doc_len, doc_ids, N, q_terms, k1=k1_values[i])
+                q_terms = tokenize_terms(qtext)
+
+                scores = score_query_bm25_robertson(
+                    postings,
+                    df,
+                    doc_len,
+                    doc_ids,
+                    N,
+                    q_terms,
+                    k1=k1,
+                    fields=field_cfg
+                )
+
                 ranked = top_k_with_padding(scores, doc_ids, TOP_K)
                 for rank, (docid, score) in enumerate(ranked, 1):
-                    f.write(f"{qid} Q0 {docid} {rank} {score:.5f} {TEAM} /article[1]\n")
+                    f.write(
+                        f"{qid} Q0 {docid} {rank} {score:.5f} "
+                        f"{TEAM} /article[1]\n"
+                    )
+
         print(f"Run Exo6 généré : {path}")
         run_id += 1
 
@@ -772,11 +964,14 @@ def main_exo5_exo6():
 # =======================
 def main():
     start = time.time()
+    docs = extract_articles_text(DATA_DIR)
+    stats = compute_stats(docs)
+
     print("=== Génération des runs (exercice 2 : XML docs, 12 runs) ===")
 
     docs = load_collection_xml(DATA_DIR)
     print(f"Documents chargés : {len(docs)}")
-    
+
     stop_full = load_stopwords(STOPFILE)
 
     stop_options = [
@@ -810,8 +1005,6 @@ def main():
                 for k, v in stats.items():
                     print(f"{k}: {v}")
 
-                    
-
             for method in methods:
                 if method == "bm25":
 
@@ -833,10 +1026,6 @@ def main():
                 print(f"  Fichier : {path} — {written}/{expected}")
                 run_paths.append(path)
                 run_id += 1
-
-    print(f"\nTotal de fichiers de runs générés : {len(run_paths)} (devrait être 12)")
-    end = time.time()
-    print(f"Temps total: {end - start:.2f}s")
 
     # ==========================
     # Exercice 3 : runs "testXML"
