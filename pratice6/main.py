@@ -238,6 +238,112 @@ def load_collection_paragraphs(root_dir):
                     docs.append((docid, text))
     return docs
 
+
+def load_collection_articles_fields(root_dir):
+
+    stopset = set()  
+
+    docs_fields = {}
+    field_lens = {}
+    df = defaultdict(int)
+
+
+    total_len_field = defaultdict(int)
+    count_docs = 0
+
+    for fname in os.listdir(root_dir):
+        if not fname.endswith(".xml"):
+            continue
+
+        docid = os.path.splitext(fname)[0]
+        path = os.path.join(root_dir, fname)
+
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+
+        article = soup.find("article")
+        if not article:
+            continue
+
+        title_text = " ".join(t.get_text(" ", strip=True) for t in article.find_all("title"))
+        section_text = " ".join(s.get_text(" ", strip=True) for s in article.find_all("section"))
+        p_text = " ".join(p.get_text(" ", strip=True) for p in article.find_all("p"))
+        rest_text = article.get_text(" ", strip=True)
+
+        fields_raw = {
+            "title": title_text,
+            "section": section_text,
+            "p": p_text,
+            "rest": rest_text
+        }
+
+        fields_terms = {}
+        fields_len = {}
+        for field, txt in fields_raw.items():
+            terms = tokenize_terms(txt) 
+            fields_terms[field] = terms
+            fields_len[field] = len(terms)
+            total_len_field[field] += len(terms)
+
+        docs_fields[docid] = fields_terms
+        field_lens[docid] = fields_len
+
+        seen = set()
+        for field in fields_terms:
+            seen.update(fields_terms[field])
+        for t in seen:
+            df[t] += 1
+
+        count_docs += 1
+
+    avg_field_len = {f: (total_len_field[f] / count_docs if count_docs else 0.0) for f in total_len_field}
+    return docs_fields, field_lens, avg_field_len, df, count_docs
+
+
+def score_query_bm25f(query, docs_fields, field_lens, avg_field_len, df, N,
+                     field_weights=None, k1=1.2, b_field=None):
+
+    if field_weights is None:
+        field_weights = {"title": 3.0, "section": 1.5, "p": 1.0, "rest": 0.3}
+    if b_field is None:
+        b_field = {f: 0.75 for f in field_weights}
+
+    q_terms = tokenize_terms(query)
+    scores = defaultdict(float)
+
+    for t in q_terms:
+        if t not in df:
+            continue
+
+        # idf BM25 classique
+        idf = math.log((N - df[t] + 0.5) / (df[t] + 0.5) + 1)
+
+        for docid, fields in docs_fields.items():
+            tf_prime = 0.0
+            for f, w in field_weights.items():
+                terms_f = fields.get(f, [])
+                if not terms_f:
+                    continue
+                tf_f = 0
+
+                for term in terms_f:
+                    if term == t:
+                        tf_f += 1
+                if tf_f == 0:
+                    continue
+
+                len_f = field_lens[docid].get(f, 0)
+                av_f = avg_field_len.get(f, 1.0) or 1.0
+                bf = b_field.get(f, 0.75)
+                norm = (1 - bf) + bf * (len_f / av_f)
+                tf_prime += w * (tf_f / norm)
+
+            if tf_prime > 0:
+                scores[docid] += idf * ((k1 + 1) * tf_prime) / (k1 + tf_prime)
+
+    return scores
+
+
 # =======================
 # MAIN
 # =======================
@@ -399,6 +505,37 @@ def main():
 
                 print(f"[RUN OK] {run_name}")
                 write_report(f"Run generated: {run_name}")
+
+
+    print("\n=== Exercise 3: XML Articles exploiting structure (BM25F) ===")
+
+    docs_fields, field_lens, avg_field_len, df_struct, N_struct = load_collection_articles_fields(DATA_DIR)
+
+    field_weights_list = [
+        ("bm25f_w1", {"title": 3.0, "section": 1.5, "p": 1.0, "rest": 0.3}),
+        ("bm25f_w2", {"title": 5.0, "section": 2.0, "p": 1.0, "rest": 0.2}),
+    ]
+
+    for name, fw in field_weights_list:
+        run_name = f"run_articles_{name}.txt"
+        run_path = os.path.join(OUTPUT_DIR, run_name)
+
+        with open(run_path, "w", encoding="utf-8") as f:
+            for qid, query in QUERIES.items():
+                scores = score_query_bm25f(
+                    query,
+                    docs_fields, field_lens, avg_field_len,
+                    df_struct, N_struct,
+                    field_weights=fw,
+                    k1=1.2
+                )
+                ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                for rank, (docid, score) in enumerate(ranked, 1):
+                    f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+
+        print(f"[RUN OK] {run_name}")
+        write_report(f"Run generated: {run_name}")
+
 
     # ==========================
     # ZIP
