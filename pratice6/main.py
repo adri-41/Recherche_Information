@@ -343,6 +343,121 @@ def score_query_bm25f(query, docs_fields, field_lens, avg_field_len, df, N,
 
     return scores
 
+def extract_article_links(root_dir):
+
+    graph = defaultdict(set)
+
+    for fname in os.listdir(root_dir):
+        if not fname.endswith(".xml"):
+            continue
+
+        src = os.path.splitext(fname)[0]
+        path = os.path.join(root_dir, fname)
+
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+
+        for link in soup.find_all("link"):
+            href = link.get("xlink:href")
+            if not href:
+                continue
+
+            if href.endswith(".xml"):
+                tgt = os.path.splitext(os.path.basename(href))[0]
+                graph[src].add(tgt)
+
+    all_nodes = set(graph.keys())
+    for src in list(graph.keys()):
+        all_nodes.update(graph[src])
+    for n in all_nodes:
+        graph.setdefault(n, set())
+
+    return graph
+
+def compute_indegree(graph):
+    indeg = defaultdict(int)
+    for src, outs in graph.items():
+        for tgt in outs:
+            indeg[tgt] += 1
+    return indeg
+
+def apply_indegree_boost(scores, indeg, alpha=0.3):
+    if not scores:
+        return scores
+
+    if indeg:
+        max_in = max(indeg.values())
+    else:
+        max_in = 0
+
+    if max_in == 0:
+        return scores
+
+    for d in list(scores.keys()):
+        pop = indeg.get(d, 0) / max_in
+        scores[d] *= (1.0 + alpha * pop)
+    return scores
+
+def compute_pagerank(graph, d=0.85, max_iter=30, tol=1e-8):
+    """
+    PageRank basique sur le graphe dirigé.
+    - d = damping factor
+    """
+    nodes = list(graph.keys())
+    N = len(nodes)
+    if N == 0:
+        return {}
+
+    idx = {n: i for i, n in enumerate(nodes)}
+
+    # initialisation uniforme
+    pr = {n: 1.0 / N for n in nodes}
+
+    # pré-calcul des out-degrees
+    outdeg = {n: len(graph[n]) for n in nodes}
+
+    for _ in range(max_iter):
+        new_pr = {n: (1 - d) / N for n in nodes}
+
+        # masse des dangling nodes (sans sorties)
+        dangling_mass = d * sum(pr[n] for n in nodes if outdeg[n] == 0) / N
+        for n in nodes:
+            new_pr[n] += dangling_mass
+
+        for src in nodes:
+            if outdeg[src] == 0:
+                continue
+            share = d * pr[src] / outdeg[src]
+            for tgt in graph[src]:
+                if tgt in new_pr:
+                    new_pr[tgt] += share
+
+        # test de convergence
+        diff = sum(abs(new_pr[n] - pr[n]) for n in nodes)
+        pr = new_pr
+        if diff < tol:
+            break
+
+    return pr
+
+
+def apply_pagerank_boost(scores, pr, alpha=0.5):
+    if not scores or not pr:
+        return scores
+
+    max_pr = max(pr.values()) if pr else 0.0
+    if max_pr == 0:
+        return scores
+
+    for d in list(scores.keys()):
+        pop = pr.get(d, 0.0) / max_pr
+        scores[d] *= (1.0 + alpha * pop)
+    return scores
+
+
+
+
+
 
 # =======================
 # MAIN
@@ -534,7 +649,44 @@ def main():
                     f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
 
         print(f"[RUN OK] {run_name}")
-        write_report(f"Run generated: {run_name}")
+
+
+    # ==========================
+    # EXERCISE 4: Articles exploiting links
+    # ==========================
+    print("\n=== Exercise 4: XML Articles exploiting links ===")
+
+    graph = extract_article_links(DATA_DIR)
+
+    indeg = compute_indegree(graph)
+    pr = compute_pagerank(graph, d=0.85, max_iter=30)
+
+
+    postings, df, doc_len, _ = build_index(docs_articles, stop_full, PorterStemmer())
+    avg_dl = sum(doc_len.values()) / len(docs_articles)
+
+    run_name = "run_articles_bm25_indegree.txt"
+    with open(os.path.join(OUTPUT_DIR, run_name), "w", encoding="utf-8") as f:
+        for qid, query in QUERIES.items():
+            scores = score_query(query, postings, df, doc_len, len(docs_articles),
+                                method="bm25", avg_dl=avg_dl)
+            scores = apply_indegree_boost(scores, indeg, alpha=0.3)
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+            for rank, (docid, score) in enumerate(ranked, 1):
+                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+    print(f"[RUN OK] {run_name}")
+
+
+    run_name = "run_articles_bm25_pagerank.txt"
+    with open(os.path.join(OUTPUT_DIR, run_name), "w", encoding="utf-8") as f:
+        for qid, query in QUERIES.items():
+            scores = score_query(query, postings, df, doc_len, len(docs_articles),
+                                method="bm25", avg_dl=avg_dl)
+            scores = apply_pagerank_boost(scores, pr, alpha=0.5)
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+            for rank, (docid, score) in enumerate(ranked, 1):
+                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+    print(f"[RUN OK] {run_name}")
 
 
     # ==========================
