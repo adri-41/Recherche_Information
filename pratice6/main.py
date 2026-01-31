@@ -502,9 +502,9 @@ def main():
             with open(run_path, "w", encoding="utf-8") as f:
                 for qid, query in QUERIES.items():
                     scores = score_query(query, postings, df, doc_len, N_articles, method=method, avg_dl=avg_dl)
-                    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
                     for rank, (docid, score) in enumerate(ranked, 1):
-                        f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                        f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
 
             print(f"[RUN OK] {run_name}")
             write_report(f"Run generated: {run_name}")
@@ -540,9 +540,9 @@ def main():
                 with open(run_path, "w", encoding="utf-8") as f:
                     for qid, query in QUERIES.items():
                         scores = score_query(query, postings, df, doc_len, N_elements, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
-                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
                         for rank, (docid, score) in enumerate(ranked, 1):
-                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
 
                 print(f"[RUN OK] {run_name}")
                 write_report(f"Run generated: {run_name}")
@@ -577,9 +577,9 @@ def main():
                 with open(run_path, "w", encoding="utf-8") as f:
                     for qid, query in QUERIES.items():
                         scores = score_query(query, postings, df, doc_len, N_sections, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
-                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
                         for rank, (docid, score) in enumerate(ranked, 1):
-                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
 
                 print(f"[RUN OK] {run_name}")
                 write_report(f"Run generated: {run_name}")
@@ -614,9 +614,9 @@ def main():
                 with open(run_path, "w", encoding="utf-8") as f:
                     for qid, query in QUERIES.items():
                         scores = score_query(query, postings, df, doc_len, N_paragraphs, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
-                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
                         for rank, (docid, score) in enumerate(ranked, 1):
-                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
 
                 print(f"[RUN OK] {run_name}")
                 write_report(f"Run generated: {run_name}")
@@ -644,9 +644,9 @@ def main():
                     field_weights=fw,
                     k1=1.2
                 )
-                ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+                ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
                 for rank, (docid, score) in enumerate(ranked, 1):
-                    f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                    f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
 
         print(f"[RUN OK] {run_name}")
 
@@ -671,9 +671,9 @@ def main():
             scores = score_query(query, postings, df, doc_len, len(docs_articles),
                                 method="bm25", avg_dl=avg_dl)
             scores = apply_indegree_boost(scores, indeg, alpha=0.3)
-            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
             for rank, (docid, score) in enumerate(ranked, 1):
-                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
     print(f"[RUN OK] {run_name}")
 
 
@@ -683,9 +683,9 @@ def main():
             scores = score_query(query, postings, df, doc_len, len(docs_articles),
                                 method="bm25", avg_dl=avg_dl)
             scores = apply_pagerank_boost(scores, pr, alpha=0.5)
-            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1000]
+            ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
             for rank, (docid, score) in enumerate(ranked, 1):
-                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM}\n")
+                f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
     print(f"[RUN OK] {run_name}")
 
 
