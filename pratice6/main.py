@@ -454,10 +454,78 @@ def apply_pagerank_boost(scores, pr, alpha=0.5):
         scores[d] *= (1.0 + alpha * pop)
     return scores
 
+# =======================
+# Anchors extraction
+# =======================
+def extract_anchor_texts(root_dir):
+    """
+    target_docid -> list of anchor terms pointing to it
+    """
+    anchors = defaultdict(list)
+
+    for fname in sorted(os.listdir(root_dir)):
+        if not fname.endswith(".xml"):
+            continue
+
+        path = os.path.join(root_dir, fname)
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            soup = BeautifulSoup(f.read(), "xml")
+
+        for link in soup.find_all("link"):
+            href = link.get("xlink:href")
+            if not href or not href.endswith(".xml"):
+                continue
+
+            tgt = os.path.splitext(os.path.basename(href))[0]
+            anchor_text = link.get_text(" ", strip=True)
+
+            if anchor_text:
+                anchors[tgt].extend(tokenize_terms(anchor_text))
+
+    return anchors
+
+def build_docs_fields_with_anchors(docs_fields, anchors):
+    """
+    Ajoute un champ 'anchor' aux articles
+    """
+    out = {}
+
+    for docid, fields in docs_fields.items():
+        new_fields = dict(fields)
+        new_fields["anchor"] = anchors.get(docid, [])
+        out[docid] = new_fields
+
+    return out
 
 
+def build_field_lens_with_anchor(docs_fields):
+    """
+    Recalcule les longueurs de champs avec anchors
+    """
+    field_lens = {}
+    avg = defaultdict(float)
 
+    for docid, fields in docs_fields.items():
+        field_lens[docid] = {}
+        for f, terms in fields.items():
+            L = len(terms)
+            field_lens[docid][f] = L
+            avg[f] += L
 
+    N = len(docs_fields)
+    for f in avg:
+        avg[f] /= N
+
+    return field_lens, avg
+
+def run_bm25f_with_anchors(query, docs_fields, field_lens, avg_field_len, df, N, field_weights=None, k1=1.2):
+    """
+    Wrapper for BM25F with anchor texts.
+    """
+    if field_weights is None:
+        # Give more weight to anchor field
+        field_weights = {"title": 3.0, "section": 1.5, "p": 1.0, "rest": 0.3, "anchor": 2.0}
+    return score_query_bm25f(query, docs_fields, field_lens, avg_field_len, df, N, field_weights=field_weights, k1=k1)
 
 # =======================
 # MAIN
@@ -688,6 +756,59 @@ def main():
                 f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
     print(f"[RUN OK] {run_name}")
 
+    # ==========================
+    # EXERCISE 5: Anchors
+    # ==========================
+    print("\n=== Exercise 5: XML Articles exploiting anchors ===")
+
+    anchors = extract_anchor_texts(DATA_DIR)
+
+    docs_fields_anchor = build_docs_fields_with_anchors(docs_fields, anchors)
+    field_lens_anchor, avg_field_len_anchor = build_field_lens_with_anchor(docs_fields_anchor)
+
+    anchor_runs = [
+        ("a1", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 1.0}, 1.2),
+        ("a2", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 1.2),
+        ("a3", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 3.0}, 1.2),
+
+        ("a4", {"title": 5, "section": 2, "p": 1, "rest": 0.2, "anchor": 2.0}, 1.2),
+        ("a5", {"title": 5, "section": 2, "p": 1, "rest": 0.2, "anchor": 3.0}, 1.2),
+
+        ("a6", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 0.8),
+        ("a7", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 1.6),
+
+        ("a8", {"title": 4, "section": 2, "p": 1.5, "rest": 0.2, "anchor": 2.5}, 1.2),
+        ("a9", {"title": 2, "section": 1, "p": 1, "rest": 0.5, "anchor": 3.5}, 1.2),
+
+        ("a10", {"title": 6, "section": 2, "p": 1, "rest": 0.1, "anchor": 2.0}, 1.2),
+    ]
+
+    for name, weights, k1 in anchor_runs:
+
+        run_name = f"run_articles_bm25f_anchor_{name}.txt"
+        run_path = os.path.join(OUTPUT_DIR, run_name)
+
+        with open(run_path, "w", encoding="utf-8") as f:
+            for qid, query in QUERIES.items():
+
+                scores = score_query_bm25f(
+                    query,
+                    docs_fields_anchor,
+                    field_lens_anchor,
+                    avg_field_len_anchor,
+                    df_struct,
+                    N_struct,
+                    field_weights=weights,
+                    k1=k1
+                )
+
+                ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
+
+                for rank, (docid, score) in enumerate(ranked, 1):
+                    f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
+
+        print(f"[RUN OK] {run_name}")
+        write_report(f"Run generated: {run_name}")
 
     # ==========================
     # ZIP
