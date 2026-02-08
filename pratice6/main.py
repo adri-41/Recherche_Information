@@ -6,6 +6,9 @@ import zipfile
 from bs4 import BeautifulSoup
 from collections import defaultdict, Counter
 from nltk.stem import PorterStemmer
+from lxml import etree
+from lxml.etree import _Element
+import os
 
 # =======================
 # Config
@@ -44,6 +47,35 @@ def load_stopwords(path):
         return set()
     with open(path, "r", encoding="utf-8") as f:
         return {w.strip().lower() for w in f if w.strip()}
+
+def get_xpath(elem):
+    return elem.getroottree().getpath(elem)
+
+def is_valid_element(elem):
+    """Vérifie si elem est un vrai élément XML (_Element)."""
+    return isinstance(elem, _Element)
+
+def get_xpath_with_index(elem):
+    """
+    Retourne un XPath complet avec indices pour chaque nœud.
+    Exemple : /article[1]/dish[1]/p[2]/link[5]
+    """
+    path = []
+    current = elem
+    while current is not None and current.getparent() is not None:
+        parent = current.getparent()
+        # récupérer tous les frères du même tag
+        siblings = [sib for sib in parent if sib.tag == current.tag]
+        # position de current parmi les frères du même tag (1-indexed)
+        index = siblings.index(current) + 1
+        path.append(f"{current.tag}[{index}]")
+        current = parent
+
+    # ajouter la racine (article)
+    if current is not None:
+        path.append(f"{current.tag}[1]")  # racine = article
+
+    return "/" + "/".join(reversed(path))
 
 # =======================
 # Tokenisation
@@ -157,91 +189,115 @@ def score_query(query, postings, df, doc_len, N, method="tfidf", avg_dl=None, k=
                 scores[d] += idf * tf * (k + 1) / denom
     return scores
 
-# =======================
-# Extraire elements
-# =======================
-from bs4 import BeautifulSoup
-import os
-
 # -----------------------------
 # Elements (tous les enfants d'article)
 # -----------------------------
 def load_collection_elements(root_dir):
     """
-    Retourne une liste (docid, texte) pour chaque "element" dans les articles.
-    Ici, on considère que chaque élément direct de <article> est un "element".
+    Charge tous les éléments XML “atomiques” des articles,
+    génère un xpath avec index et ignore les entités ou éléments invalides.
     """
     docs = []
+
     for fname in os.listdir(root_dir):
         if not fname.endswith(".xml"):
             continue
-        path = os.path.join(root_dir, fname)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            soup = BeautifulSoup(f.read(), "xml")
-        article = soup.find("article")
-        if article:
-            # chaque enfant direct de <article> est un élément
-            for i, elem in enumerate(article.find_all(recursive=False)):
-                text = elem.get_text(" ", strip=True)
-                if text:
-                    docid = f"{os.path.splitext(fname)[0]}_elem{i+1}"
-                    docs.append((docid, text))
-    return docs
 
+        path = os.path.join(root_dir, fname)
+        parser = etree.XMLParser(recover=True, resolve_entities=False)  # ignore les entités
+        try:
+            tree = etree.parse(path, parser)
+        except etree.XMLSyntaxError:
+            continue
+
+        article = tree.find(".//article")
+        if article is None or not etree.iselement(article):
+            continue
+
+        docid = os.path.splitext(fname)[0]
+
+        for elem in article.iter():
+            if elem is article:
+                continue
+            if not etree.iselement(elem):
+                continue  # ignore les _Entity et autres nœuds invalides
+
+            # Ne prendre que les éléments “feuilles” pour éviter les chevauchements
+            if any(etree.iselement(child) and len(child) > 0 for child in elem):
+                continue
+
+            try:
+                text = "".join([t for t in elem.itertext() if t is not None]).strip()
+            except ValueError:
+                continue  # ignore si l'objet n'est pas un élément XML valide
+
+            if not text:
+                continue
+
+            xpath = get_xpath_with_index(elem)
+            docs.append((f"{docid}|{xpath}", text))
+
+    return docs
 
 # -----------------------------
 # Sections (<section> dans les articles)
 # -----------------------------
 def load_collection_sections(root_dir):
-    """
-    Retourne une liste (docid, texte) pour chaque <section> dans les articles.
-    """
     docs = []
+
     for fname in os.listdir(root_dir):
         if not fname.endswith(".xml"):
             continue
-        path = os.path.join(root_dir, fname)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            soup = BeautifulSoup(f.read(), "xml")
-        article = soup.find("article")
-        if article:
-            sections = article.find_all("section")
-            for i, sec in enumerate(sections):
-                text = sec.get_text(" ", strip=True)
-                if text:
-                    docid = f"{os.path.splitext(fname)[0]}_sec{i+1}"
-                    docs.append((docid, text))
-    return docs
 
+        path = os.path.join(root_dir, fname)
+        parser = etree.XMLParser(recover=True)
+        tree = etree.parse(path, parser)
+
+        docid = os.path.splitext(fname)[0]
+
+        for sec in tree.findall(".//sec"):
+            if not is_valid_element(sec):
+                continue
+            text = " ".join(sec.itertext()).strip()
+            if not text:
+                continue
+
+            xpath = get_xpath_with_index(sec)
+            docs.append((f"{docid}|{xpath}", text))
+
+    return docs
 
 # -----------------------------
 # Paragraphes (<p> dans les articles)
 # -----------------------------
 def load_collection_paragraphs(root_dir):
-    """
-    Retourne une liste (docid, texte) pour chaque <p> dans les articles.
-    """
     docs = []
+
     for fname in os.listdir(root_dir):
         if not fname.endswith(".xml"):
             continue
-        path = os.path.join(root_dir, fname)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            soup = BeautifulSoup(f.read(), "xml")
-        article = soup.find("article")
-        if article:
-            paragraphs = article.find_all("p")
-            for i, p in enumerate(paragraphs):
-                text = p.get_text(" ", strip=True)
-                if text:
-                    docid = f"{os.path.splitext(fname)[0]}_p{i+1}"
-                    docs.append((docid, text))
-    return docs
 
+        path = os.path.join(root_dir, fname)
+        parser = etree.XMLParser(recover=True)
+        tree = etree.parse(path, parser)
+
+        docid = os.path.splitext(fname)[0]
+
+        for p in tree.findall(".//p"):
+            if not is_valid_element(p):
+                continue
+            text = " ".join(p.itertext()).strip()
+            if not text:
+                continue
+
+            xpath = get_xpath_with_index(p)
+            docs.append((f"{docid}|{xpath}", text))
+
+    return docs
 
 def load_collection_articles_fields(root_dir):
 
-    stopset = set()  
+    stopset = set()
 
     docs_fields = {}
     field_lens = {}
@@ -280,7 +336,7 @@ def load_collection_articles_fields(root_dir):
         fields_terms = {}
         fields_len = {}
         for field, txt in fields_raw.items():
-            terms = tokenize_terms(txt) 
+            terms = tokenize_terms(txt)
             fields_terms[field] = terms
             fields_len[field] = len(terms)
             total_len_field[field] += len(terms)
@@ -527,6 +583,95 @@ def run_bm25f_with_anchors(query, docs_fields, field_lens, avg_field_len, df, N,
         field_weights = {"title": 3.0, "section": 1.5, "p": 1.0, "rest": 0.3, "anchor": 2.0}
     return score_query_bm25f(query, docs_fields, field_lens, avg_field_len, df, N, field_weights=field_weights, k1=k1)
 
+def recompute_df_from_fields(docs_fields):
+    df = defaultdict(int)
+
+    for docid, fields in docs_fields.items():
+        seen = set()
+        for terms in fields.values():
+            seen.update(terms)
+        for t in seen:
+            df[t] += 1
+
+    return df
+
+def write_run_grouped_by_article(run_path, qid, scores, team, topk=1500):
+    """
+    Écrit max 1 élément par article
+    évite overlaps
+    garantit exactement topk résultats
+    """
+
+    sorted_docs = sorted(scores.items(), key=lambda x: -x[1])
+
+    seen_articles = set()
+    results = []
+
+    for dockey, score in sorted_docs:
+        docid, xpath = dockey.split("|", 1)
+
+        if docid in seen_articles:
+            continue
+
+        seen_articles.add(docid)
+        results.append((docid, xpath, score))
+
+        if len(results) == topk:
+            break
+
+    with open(run_path, "a", encoding="utf-8") as f:
+        for rank, (docid, xpath, score) in enumerate(results, start=1):
+            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {team} {xpath}\n")
+
+def run_indexed_collection(docs, name_prefix):
+    """
+    docs: liste de (docid, text)
+    name_prefix: préfixe pour le nom du run
+    """
+    if not docs:
+        print(f"[WARNING] No documents to index for {name_prefix}")
+        return
+
+    N = len(docs)
+    stop_full = load_stopwords(STOPFILE)
+
+    configs = [
+        ("nostop", "nostem", set(), None),
+        ("stop671", "nostem", stop_full, None),
+        ("nostop", "porter", set(), PorterStemmer()),
+        ("stop671", "porter", stop_full, PorterStemmer()),
+    ]
+    methods = ["tfidf", "lnu", "bm25"]
+
+    for stop_name, stem_name, stopset, stemmer in configs:
+        postings, df, doc_len, stats = build_index(docs, stopset, stemmer)
+        avg_dl = sum(doc_len.values()) / N
+
+        run_dir = OUTPUT_DIR
+        ensure_dir(run_dir)
+
+        for method in methods:
+            bm25_params = [(1.2, 0.75)] if method == "bm25" else [(None, None)]
+            for k_val, b_val in bm25_params:
+                run_name = f"{name_prefix}_{stop_name}_{stem_name}_{method}"
+                if method == "bm25":
+                    run_name += f"_k{k_val}_b{b_val}"
+                run_name += ".txt"
+
+                run_path = os.path.join(run_dir, run_name)
+                with open(run_path, "w", encoding="utf-8") as f_run:
+                    for qid, query in QUERIES.items():
+                        scores = score_query(
+                            query, postings, df, doc_len, N,
+                            method=method,
+                            avg_dl=avg_dl,
+                            k=k_val,
+                            b=b_val
+                        )
+                        write_run_grouped_by_article(run_path, qid, scores, TEAM)
+                print(f"[RUN OK] {run_name}")
+                write_report(f"Run generated: {run_name}")
+
 # =======================
 # MAIN
 # =======================
@@ -578,117 +723,70 @@ def main():
             write_report(f"Run generated: {run_name}")
 
     # ==========================
-    # EXERCISE 2: Elements
+    # EXERCISE 2: Elements, Sections, Paragraphs
     # ==========================
-    print("\n=== Exercise 2: XML Elements ===")
-    docs_elements = load_collection_elements(DATA_DIR)  # À créer
-    N_elements = len(docs_elements)
-    stats_written_elements = False
+    def run_collection(docs, name_prefix):
+        if not docs:
+            print(f"[WARNING] Collection {name_prefix} is empty. Skipping.")
+            return
 
-    for stop_name, stem_name, stopset, stemmer in configs:
-        postings, df, doc_len, stats = build_index(docs_elements, stopset, stemmer)
-        avg_dl = sum(doc_len.values()) / N_elements
+        N_docs = len(docs)
+        stats_written = False
+        stop_full = load_stopwords(STOPFILE)
+        configs = [
+            ("nostop", "nostem", set(), None),
+            ("stop671", "nostem", stop_full, None),
+            ("nostop", "porter", set(), PorterStemmer()),
+            ("stop671", "porter", stop_full, PorterStemmer()),
+        ]
+        methods = ["tfidf", "lnu", "bm25"]
 
-        if not stats_written_elements:
-            write_report("=== Stats clés Elements ===")
-            for k, v in stats.items():
-                write_report(f"{k}: {v}")
-            stats_written_elements = True
+        for stop_name, stem_name, stopset, stemmer in configs:
+            postings, df, doc_len, stats = build_index(docs, stopset, stemmer)
+            avg_dl = sum(doc_len.values()) / N_docs
 
-        for method in methods:
-            # Runs BM25 avec tuning
-            bm25_params = [(1.2, 0.75), (0.2, 0.25)] if method=="bm25" else [(None, None)]
-            for k_val, b_val in bm25_params:
-                run_name = f"run_elements_{stop_name}_{stem_name}_{method}"
-                if method=="bm25":
-                    run_name += f"_k{k_val}_b{b_val}"
-                run_name += ".txt"
-                run_path = os.path.join(OUTPUT_DIR, run_name)
+            if not stats_written:
+                write_report(f"=== Stats clés {name_prefix} ===")
+                for k, v in stats.items():
+                    write_report(f"{k}: {v}")
+                stats_written = True
 
-                with open(run_path, "w", encoding="utf-8") as f:
-                    for qid, query in QUERIES.items():
-                        scores = score_query(query, postings, df, doc_len, N_elements, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
-                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
-                        for rank, (docid, score) in enumerate(ranked, 1):
-                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
+            for method in methods:
+                bm25_params = [(1.2, 0.75), (0.2, 0.25)] if method == "bm25" else [(None, None)]
+                for k_val, b_val in bm25_params:
+                    run_name = f"{name_prefix}_{stop_name}_{stem_name}_{method}"
+                    if method == "bm25":
+                        run_name += f"_k{k_val}_b{b_val}"
+                    run_name += ".txt"
+                    run_path = os.path.join(OUTPUT_DIR, run_name)
 
-                print(f"[RUN OK] {run_name}")
-                write_report(f"Run generated: {run_name}")
+                    # Une seule ouverture du fichier par run
+                    with open(run_path, "w", encoding="utf-8") as f_run:
+                        for qid, query in QUERIES.items():
+                            scores = score_query(
+                                query, postings, df, doc_len, N_docs,
+                                method=method,
+                                avg_dl=avg_dl,
+                                k=k_val,
+                                b=b_val
+                            )
+                            write_run_grouped_by_article(run_path, qid, scores, TEAM, topk=1500)
 
-    # ==========================
-    # EXERCISE 2: Sections
-    # ==========================
+                    print(f"[RUN OK] {run_name}")
+                    write_report(f"Run generated: {run_name}")
+
+    # ===== Appels pour Exercise 2 =====
+    print("\n=== Exercise 2: Elements ===")
+    docs_elements = load_collection_elements(DATA_DIR)
+    run_collection(docs_elements, "run_elements")
+
     print("\n=== Exercise 2: Sections ===")
-    docs_sections = load_collection_sections(DATA_DIR)  # À créer
-    N_sections = len(docs_sections)
-    stats_written_sections = False
+    docs_sections = load_collection_sections(DATA_DIR)
+    run_collection(docs_sections, "run_sections")
 
-    for stop_name, stem_name, stopset, stemmer in configs:
-        postings, df, doc_len, stats = build_index(docs_sections, stopset, stemmer)
-        avg_dl = sum(doc_len.values()) / N_sections
-
-        if not stats_written_sections:
-            write_report("=== Stats clés Sections ===")
-            for k, v in stats.items():
-                write_report(f"{k}: {v}")
-            stats_written_sections = True
-
-        for method in methods:
-            bm25_params = [(1.2, 0.75), (0.2, 0.25)] if method=="bm25" else [(None, None)]
-            for k_val, b_val in bm25_params:
-                run_name = f"run_sections_{stop_name}_{stem_name}_{method}"
-                if method=="bm25":
-                    run_name += f"_k{k_val}_b{b_val}"
-                run_name += ".txt"
-                run_path = os.path.join(OUTPUT_DIR, run_name)
-
-                with open(run_path, "w", encoding="utf-8") as f:
-                    for qid, query in QUERIES.items():
-                        scores = score_query(query, postings, df, doc_len, N_sections, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
-                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
-                        for rank, (docid, score) in enumerate(ranked, 1):
-                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
-
-                print(f"[RUN OK] {run_name}")
-                write_report(f"Run generated: {run_name}")
-
-    # ==========================
-    # EXERCISE 2: Paragraphs
-    # ==========================
     print("\n=== Exercise 2: Paragraphs ===")
-    docs_paragraphs = load_collection_paragraphs(DATA_DIR)  # À créer
-    N_paragraphs = len(docs_paragraphs)
-    stats_written_paragraphs = False
-
-    for stop_name, stem_name, stopset, stemmer in configs:
-        postings, df, doc_len, stats = build_index(docs_paragraphs, stopset, stemmer)
-        avg_dl = sum(doc_len.values()) / N_paragraphs
-
-        if not stats_written_paragraphs:
-            write_report("=== Stats clés Paragraphs ===")
-            for k, v in stats.items():
-                write_report(f"{k}: {v}")
-            stats_written_paragraphs = True
-
-        for method in methods:
-            bm25_params = [(1.2, 0.75), (0.2, 0.25)] if method=="bm25" else [(None, None)]
-            for k_val, b_val in bm25_params:
-                run_name = f"run_paragraphs_{stop_name}_{stem_name}_{method}"
-                if method=="bm25":
-                    run_name += f"_k{k_val}_b{b_val}"
-                run_name += ".txt"
-                run_path = os.path.join(OUTPUT_DIR, run_name)
-
-                with open(run_path, "w", encoding="utf-8") as f:
-                    for qid, query in QUERIES.items():
-                        scores = score_query(query, postings, df, doc_len, N_paragraphs, method=method, avg_dl=avg_dl, k=k_val, b=b_val)
-                        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:1500]
-                        for rank, (docid, score) in enumerate(ranked, 1):
-                            f.write(f"{qid} Q0 {docid} {rank} {score:.4f} {TEAM} /article[1]\n")
-
-                print(f"[RUN OK] {run_name}")
-                write_report(f"Run generated: {run_name}")
-
+    docs_paragraphs = load_collection_paragraphs(DATA_DIR)
+    run_collection(docs_paragraphs, "run_paragraphs")
 
     print("\n=== Exercise 3: XML Articles exploiting structure (BM25F) ===")
 
@@ -766,21 +864,57 @@ def main():
     docs_fields_anchor = build_docs_fields_with_anchors(docs_fields, anchors)
     field_lens_anchor, avg_field_len_anchor = build_field_lens_with_anchor(docs_fields_anchor)
 
+    df_anchor = recompute_df_from_fields(docs_fields_anchor)
+    N_anchor = len(docs_fields_anchor)
+
     anchor_runs = [
-        ("a1", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 1.0}, 1.2),
-        ("a2", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 1.2),
-        ("a3", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 3.0}, 1.2),
+        # ===== BASELINE =====
+        ("a1", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.0}, 1.2),
 
-        ("a4", {"title": 5, "section": 2, "p": 1, "rest": 0.2, "anchor": 2.0}, 1.2),
-        ("a5", {"title": 5, "section": 2, "p": 1, "rest": 0.2, "anchor": 3.0}, 1.2),
+        # ===== micro variations anchors 0 → 1 =====
+        ("a2", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.1}, 1.2),
+        ("a3", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.2}, 1.2),
+        ("a4", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.3}, 1.2),
+        ("a5", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.4}, 1.2),
+        ("a6", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.5}, 1.2),
+        ("a7", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.6}, 1.2),
+        ("a8", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.7}, 1.2),
+        ("a9", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.8}, 1.2),
+        ("a10", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 0.9}, 1.2),
+        ("a11", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 1.0}, 1.2),
 
-        ("a6", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 0.8),
-        ("a7", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 1.6),
+        # ===== anchors forts =====
+        ("a12", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 1.5}, 1.2),
+        ("a13", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 1.2),
+        ("a14", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.5}, 1.2),
+        ("a15", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 3.0}, 1.2),
 
-        ("a8", {"title": 4, "section": 2, "p": 1.5, "rest": 0.2, "anchor": 2.5}, 1.2),
-        ("a9", {"title": 2, "section": 1, "p": 1, "rest": 0.5, "anchor": 3.5}, 1.2),
+        # ===== variations structure =====
+        ("a16", {"title": 5, "section": 2, "p": 1, "rest": 0.2, "anchor": 2.0}, 1.2),
+        ("a17", {"title": 5, "section": 2, "p": 1, "rest": 0.2, "anchor": 3.0}, 1.2),
+        ("a18", {"title": 4, "section": 2, "p": 1.5, "rest": 0.2, "anchor": 2.5}, 1.2),
+        ("a19", {"title": 2, "section": 1, "p": 1, "rest": 0.5, "anchor": 3.5}, 1.2),
+        ("a20", {"title": 6, "section": 2, "p": 1, "rest": 0.1, "anchor": 2.0}, 1.2),
 
-        ("a10", {"title": 6, "section": 2, "p": 1, "rest": 0.1, "anchor": 2.0}, 1.2),
+        # ===== variations k1 =====
+        ("a21", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 0.8),
+        ("a22", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 2.0}, 1.6),
+
+        # ===== mix anchor + structure =====
+        ("a23", {"title": 4, "section": 1.8, "p": 1, "rest": 0.3, "anchor": 1.5}, 1.2),
+        ("a24", {"title": 4, "section": 1.8, "p": 1, "rest": 0.3, "anchor": 2.5}, 1.2),
+        ("a25", {"title": 2.5, "section": 1.2, "p": 1, "rest": 0.4, "anchor": 2.0}, 1.2),
+
+        # ===== extrêmes contrôlés =====
+        ("a26", {"title": 1, "section": 1, "p": 1, "rest": 1, "anchor": 0.5}, 1.2),
+        ("a27", {"title": 6, "section": 3, "p": 2, "rest": 0.1, "anchor": 3.0}, 1.2),
+
+        # ===== stress anchor =====
+        ("a28", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 4.0}, 1.2),
+        ("a29", {"title": 3, "section": 1.5, "p": 1, "rest": 0.3, "anchor": 5.0}, 1.2),
+
+        # ===== final =====
+        ("a30", {"title": 3.5, "section": 1.7, "p": 1, "rest": 0.3, "anchor": 2.0}, 1.2),
     ]
 
     for name, weights, k1 in anchor_runs:
@@ -796,8 +930,8 @@ def main():
                     docs_fields_anchor,
                     field_lens_anchor,
                     avg_field_len_anchor,
-                    df_struct,
-                    N_struct,
+                    df_anchor,
+                    N_anchor,
                     field_weights=weights,
                     k1=k1
                 )
